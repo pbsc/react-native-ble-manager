@@ -84,7 +84,7 @@ android {
 
 dependencies {
     ...
-    compile project(':react-native-ble-manager')
+    implementation(project(':react-native-ble-manager'))
 }
 ```
 ##### Update Android Manifest
