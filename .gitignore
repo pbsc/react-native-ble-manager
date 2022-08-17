@@ -1,6 +1,11 @@
 .idea
+
 android/local.properties
+android/.project
+android/.settings
+android/.classpath
 gen/
+
 
 .gradle
 gradle
