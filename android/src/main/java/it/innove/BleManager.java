@@ -457,6 +457,7 @@ class BleManager extends ReactContextBaseJavaModule {
             for (int i = 0; i < message.size(); i++) {
                 decoded[i] = new Integer(message.getInt(i)).byteValue();
             }
+            String strMessage = bytesToHex(decoded);
             Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
             //peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
             //        decoded, maxByteSize, null, callback, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
