@@ -13,9 +13,7 @@ buildscript {
         }
     }
 }
-}
->>>>>>> 9bd6536e2d65233ace2fd8d61b162cf52a454876
-}
+
 apply plugin: 'com.android.library'
 
 def safeExtGet(prop, fallback) {
