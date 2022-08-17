@@ -749,6 +749,7 @@ class BleManager extends ReactContextBaseJavaModule {
                     state = "off";
             }
         }
+    }
 
     @ReactMethod
     public void setName(String name) {
