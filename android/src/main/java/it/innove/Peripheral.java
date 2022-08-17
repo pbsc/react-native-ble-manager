@@ -801,13 +801,6 @@ public class Peripheral extends BluetoothGattCallback {
 					}
 				});
 		}
-			});
-
-		if (result) {
-			nextCommand();
-		} else {
-			Log.d(BleManager.LOG_TAG, "Could not queue read characteristic command");
-		}
 	}
 
 	public void readRSSI(final Callback callback) {
