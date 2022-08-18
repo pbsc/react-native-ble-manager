@@ -152,7 +152,7 @@ public class PeripheralService extends Service {
             Log.d("ReactNativeBleManager", "Service start notify");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
-            peripheral.registerNotify(serviceUUID, characteristicUUID, new Callback() {
+            peripheral.registerNotify(serviceUUID, characteristicUUID,1, new Callback() {
                 @Override
                 public void invoke(Object... args) {
                     Log.d("ReactNativeBleManager", args.toString());
