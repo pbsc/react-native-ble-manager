@@ -31,6 +31,8 @@ import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
 import com.google.gson.Gson;
 
 import org.json.JSONException;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -279,6 +281,13 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 
 		return map;
+	}
+
+	static JSONObject byteArrayToJSON(byte[] bytes) throws JSONException {
+		JSONObject object = new JSONObject();
+		object.put("CDVType", "ArrayBuffer");
+		object.put("data", bytes != null ? Base64.encodeToString(bytes, Base64.NO_WRAP) : null);
+		return object;
 	}
 
 	static WritableMap byteArrayToWritableMap(byte[] bytes) throws JSONException {
