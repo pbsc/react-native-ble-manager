@@ -173,7 +173,7 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 	// bt_btif : Register with GATT stack failed.
 
-	public void disconnect() {
+	public void disconnect(boolean force) {
 		connectCallback = null;
 		connected = false;
 		clearBuffers();
@@ -183,9 +183,11 @@ public class Peripheral extends BluetoothGattCallback {
 		if (gatt != null) {
 			try {
 				gatt.disconnect();
-				gatt.close();
-				gatt = null;
-				sendConnectionEvent(device, "BleManagerDisconnectPeripheral", BluetoothGatt.GATT_SUCCESS);
+				if (force) {
+					gatt.close();
+					gatt = null;
+					sendConnectionEvent(device, "BleManagerDisconnectPeripheral", BluetoothGatt.GATT_SUCCESS);
+				}
 				Log.d(BleManager.LOG_TAG, "Disconnect");
 			} catch (Exception e) {
 				sendConnectionEvent(device, "BleManagerDisconnectPeripheral", BluetoothGatt.GATT_FAILURE);
