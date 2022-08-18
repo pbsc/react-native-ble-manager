@@ -104,6 +104,7 @@ public class Peripheral extends BluetoothGattCallback {
 		this.device = device;
 		this.peripheralService = peripheralService;
 		this.serviceContext = serviceContext;
+		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
 	}
 
 	private void sendEvent(String eventName, @Nullable WritableMap params) {
