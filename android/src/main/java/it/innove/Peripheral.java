@@ -86,12 +86,6 @@ public class Peripheral extends BluetoothGattCallback {
 
 	private List<byte[]> writeQueue = new ArrayList<>();
 
-	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
-		this.device = device;
-		this.peripheralService = peripheralService;
-		this.serviceContext = serviceContext;
-	}
-
 	public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {
 		this.device = device;
 		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
@@ -104,6 +98,12 @@ public class Peripheral extends BluetoothGattCallback {
 		this.device = device;
 		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
 		this.reactContext = reactContext;
+	}
+
+	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
+		this.device = device;
+		this.peripheralService = peripheralService;
+		this.serviceContext = serviceContext;
 	}
 
 	private void sendEvent(String eventName, @Nullable WritableMap params) {
