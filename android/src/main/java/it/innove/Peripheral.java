@@ -100,11 +100,11 @@ public class Peripheral extends BluetoothGattCallback {
 		this.reactContext = reactContext;
 	}
 
-	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
+/* 	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
 		this.device = device;
 		this.peripheralService = peripheralService;
 		this.serviceContext = serviceContext;
-	}
+	} */
 
 	private void sendEvent(String eventName, @Nullable WritableMap params) {
 		//reactContext.getJSModule(RCTNativeAppEventEmitter.class).emit(eventName, params);
