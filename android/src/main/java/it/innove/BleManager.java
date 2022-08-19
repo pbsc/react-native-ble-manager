@@ -138,7 +138,6 @@ class BleManager extends ReactContextBaseJavaModule {
                 enableBluetoothCallback = null;
             }
         }
-
     };
 
     // key is the MAC Address
@@ -350,16 +349,17 @@ class BleManager extends ReactContextBaseJavaModule {
             //callback.invoke();
             //Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
-                .putExtra("UUID", peripheralUUID)
-                .putExtra("ACTION", "DISCONNECT")
-                .putExtra("resultReciever", getReceiver(callback))
-                .putExtra("eventReciever", getEventReciever());
+                    .putExtra("UUID", peripheralUUID)
+                    .putExtra("ACTION", "DISCONNECT")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever());
 
             getReactApplicationContext().startService(serviceIntent);
         } else
             callback.invoke("Peripheral not found");
     }
 
+    // This method added after upgrade 6.5 to 8.5
     @ReactMethod
     public void startNotificationUseBuffer(String deviceUUID, String serviceUUID, String characteristicUUID,
                                            Integer buffer, Callback callback) {
@@ -412,24 +412,24 @@ class BleManager extends ReactContextBaseJavaModule {
         if (peripheral != null) {
             //peripheral.removeNotify(UUIDHelper.uuidFromString(serviceUUID),
             //UUIDHelper.uuidFromString(characteristicUUID), callback);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
-                .putExtra("UUID", deviceUUID)
-                .putExtra("SERVICEUUID", serviceUUID)
-                .putExtra("CHARACTERISTICUUID", characteristicUUID)
-                .putExtra("ACTION", "STOPNOTIFICATION")
-                .putExtra("resultReciever", getReceiver(callback))
-                .putExtra("eventReciever", getEventReciever());
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "STOPNOTIFICATION")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever());
 
             getReactApplicationContext().startService(serviceIntent);
         } else
             callback.invoke("Peripheral not found");
     }
 
+    // Added by PBSC
     @ReactMethod
 	public void setServiceRecoveryData(ReadableMap data, Callback callback) {
 		// sets last ble usage for recovery by service
-
 		if(data != null) {
 			try {
 				PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext()).edit().putString("serviceRecoveryData", convertMapToJson(data).toString()).commit();
@@ -440,7 +440,6 @@ class BleManager extends ReactContextBaseJavaModule {
 		} else {
 			PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext()).edit().putString("serviceRecoveryData", new JsonObject().toString()).commit();
 		}
-
 		callback.invoke();
 	}
 
@@ -459,10 +458,10 @@ class BleManager extends ReactContextBaseJavaModule {
                 decoded[i] = new Integer(message.getInt(i)).byteValue();
             }
             String strMessage = bytesToHex(decoded);
-            Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
+            Log.d(LOG_TAG, "Message(" + decoded.length + "): " + strMessage);
             //peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
             //        decoded, maxByteSize, null, callback, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-            //Added by PBSC
+            // Added by PBSC
 			Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
 					.putExtra("UUID", deviceUUID)
 					.putExtra("SERVICEUUID", serviceUUID)
@@ -496,7 +495,7 @@ class BleManager extends ReactContextBaseJavaModule {
             Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
             //peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
             //        decoded, maxByteSize, queueSleepTime, callback, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("SERVICEUUID", serviceUUID)
@@ -513,13 +512,13 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void read(String deviceUUID, String serviceUUID, String characteristicUUID, Callback callback) {
+    public void read(String deviceUUID, String serviceUUID, String characteristicUUID, final Callback callback) {
         Log.d(LOG_TAG, "Read from: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
         }
-        //Added by PBSC
+        // Added by PBSC
 		ResultReceiver reciever = new ResultReceiver(new Handler()) {
 			protected void onReceiveResult(int resultCode, Bundle resultData) {
 				Log.d("ReactNativeBleManager", "Callback Invoked");
@@ -555,7 +554,7 @@ class BleManager extends ReactContextBaseJavaModule {
         if (peripheral != null) {
             //peripheral.read(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
             //        callback);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("SERVICEUUID", serviceUUID)
@@ -570,9 +569,9 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void retrieveServices(String deviceUUID, ReadableArray services, Callback callback) {
+    public void retrieveServices(String deviceUUID, ReadableArray services, final Callback callback) {
         Log.d(LOG_TAG, "Retrieve services from: " + deviceUUID);
-        //Added by PBSC
+        // Added by PBSC
         ResultReceiver reciever = new ResultReceiver(new Handler()) {
             protected void onReceiveResult(int resultCode, Bundle resultData) {
                 Log.d("ReactNativeBleManager", "Callback Invoked");
@@ -608,7 +607,7 @@ class BleManager extends ReactContextBaseJavaModule {
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             //peripheral.retrieveServices(callback);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("ACTION", "RETRIEVESERVICES")
@@ -620,7 +619,7 @@ class BleManager extends ReactContextBaseJavaModule {
             callback.invoke("Peripheral not found", null);
     }
 
-    //Added by PBSC
+    // Added by PBSC
     private static WritableMap convertJsonToMap(JSONObject jsonObject) throws JSONException {
 		WritableMap map = new WritableNativeMap();
 		Iterator<String> iterator = jsonObject.keys();
@@ -646,7 +645,7 @@ class BleManager extends ReactContextBaseJavaModule {
 		return map;
 	}
 
-    //Added by PBSC
+    // Added by PBSC
 	private static WritableArray convertJsonToArray(JSONArray jsonArray) throws JSONException {
 		WritableArray array = new WritableNativeArray();
 		for (int i = 0; i < jsonArray.length(); i++) {
@@ -676,7 +675,7 @@ class BleManager extends ReactContextBaseJavaModule {
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             //peripheral.refreshCache(callback);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("ACTION", "REFRESHCACHE")
@@ -694,18 +693,19 @@ class BleManager extends ReactContextBaseJavaModule {
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             //peripheral.readRSSI(callback);
-            //Added by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
-                .putExtra("UUID", deviceUUID)
-                .putExtra("ACTION", "READRSSI")
-                .putExtra("resultReciever", getReceiver(callback))
-                .putExtra("eventReciever", getEventReciever());
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("ACTION", "READRSSI")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever());
 
             getReactApplicationContext().startService(serviceIntent);
         } else
             callback.invoke("Peripheral not found", null);
     }
 
+    // This method added after upgrade 6.5 to 8.5
     private Peripheral savePeripheral(BluetoothDevice device) {
         String address = device.getAddress();
         synchronized (peripherals) {
@@ -722,11 +722,13 @@ class BleManager extends ReactContextBaseJavaModule {
         return peripherals.get(address);
     }
 
+    // This method added after upgrade 6.5 to 8.5
     public Peripheral getPeripheral(BluetoothDevice device) {
         String address = device.getAddress();
         return peripherals.get(address);
     }
 
+    // This method added after upgrade 6.5 to 8.5
     public Peripheral savePeripheral(Peripheral peripheral) {
         synchronized (peripherals) {
             peripherals.put(peripheral.getDevice().getAddress(), peripheral);
@@ -753,6 +755,7 @@ class BleManager extends ReactContextBaseJavaModule {
         }
     }
 
+    // This method added after upgrade 6.5 to 8.5
     @ReactMethod
     public void setName(String name) {
         BluetoothAdapter adapter = getBluetoothAdapter();
@@ -844,10 +847,10 @@ class BleManager extends ReactContextBaseJavaModule {
                     bluetoothDevice.createBond();
                 }
             }
-
         }
     };
 
+    // This method added after upgrade 6.5 to 8.5
     private void clearPeripherals() {
         if (!peripherals.isEmpty()) {
             synchronized (peripherals) {
@@ -856,6 +859,7 @@ class BleManager extends ReactContextBaseJavaModule {
         }
     }
 
+    // This method added after upgrade 6.5 to 8.5
     private void disconnectPeripherals() {
         if (!peripherals.isEmpty()) {
             synchronized (peripherals) {
@@ -943,7 +947,7 @@ class BleManager extends ReactContextBaseJavaModule {
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             //peripheral.requestConnectionPriority(connectionPriority, callback);
-            //Add by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("CONNECTIONPRIORITY", connectionPriority)
@@ -963,7 +967,7 @@ class BleManager extends ReactContextBaseJavaModule {
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             //peripheral.requestMTU(mtu, callback);
-            //Add by PBSC
+            // Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
                 .putExtra("UUID", deviceUUID)
                 .putExtra("MTU", mtu)
@@ -1018,16 +1022,19 @@ class BleManager extends ReactContextBaseJavaModule {
         return peripheral;
     }
 
+    // This method added after upgrade 6.5 to 8.5
     @ReactMethod
     public void addListener(String eventName) {
-      // Keep: Required for RN built in Event Emitter Calls.
+        // Keep: Required for RN built in Event Emitter Calls.
     }
 
+    // This method added after upgrade 6.5 to 8.5
     @ReactMethod
-     public void removeListeners(Integer count) {
-      // Keep: Required for RN built in Event Emitter Calls.
+    public void removeListeners(Integer count) {
+        // Keep: Required for RN built in Event Emitter Calls.
     }
 
+    // This method added after upgrade 6.5 to 8.5
     @Override
     public void onCatalystInstanceDestroy() {
         try {
@@ -1044,7 +1051,7 @@ class BleManager extends ReactContextBaseJavaModule {
         }
     }
 
-    //Added by PBSC
+    // Added by PBSC
     private static JSONObject convertMapToJson(ReadableMap readableMap) throws JSONException {
 		JSONObject object = new JSONObject();
 		ReadableMapKeySetIterator iterator = readableMap.keySetIterator();
@@ -1074,7 +1081,7 @@ class BleManager extends ReactContextBaseJavaModule {
 		return object;
 	}
 
-    //Added by PBSC
+    // Added by PBSC
 	private static JSONArray convertArrayToJson(ReadableArray readableArray) throws JSONException {
 		JSONArray array = new JSONArray();
 		for (int i = 0; i < readableArray.size(); i++) {
@@ -1100,5 +1107,4 @@ class BleManager extends ReactContextBaseJavaModule {
 		}
 		return array;
 	}
-
 }
