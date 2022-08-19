@@ -321,7 +321,7 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void connect(String peripheralUUID, Callback callback) {
+    public void connect(String peripheralUUID, final Callback callback) {
         Log.d(LOG_TAG, "Connect to: " + peripheralUUID);
 
 		Peripheral peripheral = retrieveOrCreatePeripheral(peripheralUUID);
@@ -329,7 +329,7 @@ class BleManager extends ReactContextBaseJavaModule {
 			callback.invoke("Invalid peripheral uuid");
 			return;
 		}
-		peripheral.connect(callback, getCurrentActivity());
+		//peripheral.connect(callback, getCurrentActivity());
         //Added by PBSC
         Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
             .putExtra("UUID", peripheralUUID)
@@ -341,7 +341,7 @@ class BleManager extends ReactContextBaseJavaModule {
 	}
 
     @ReactMethod
-    public void disconnect(String peripheralUUID, boolean force, Callback callback) {
+    public void disconnect(String peripheralUUID, Callback callback) {
         Log.d(LOG_TAG, "Disconnect from: " + peripheralUUID);
 
         Peripheral peripheral = peripherals.get(peripheralUUID);
