@@ -86,6 +86,13 @@ public class Peripheral extends BluetoothGattCallback {
 
 	private List<byte[]> writeQueue = new ArrayList<>();
 
+	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
+		this.device = device;
+		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
+		this.peripheralService = peripheralService;
+		this.serviceContext = serviceContext;
+	}
+
 	public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {
 		this.device = device;
 		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
@@ -100,16 +107,9 @@ public class Peripheral extends BluetoothGattCallback {
 		this.reactContext = reactContext;
 	}
 
-	public Peripheral(BluetoothDevice device, PeripheralService peripheralService, Context serviceContext) {
-		this.device = device;
-		this.peripheralService = peripheralService;
-		this.serviceContext = serviceContext;
-		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
-	}
-
 	private void sendEvent(String eventName, @Nullable WritableMap params) {
 		//reactContext.getJSModule(RCTNativeAppEventEmitter.class).emit(eventName, params);
-		//َAdded by PBSC
+		//َ Added by PBSC
 		Log.d(BleManager.LOG_TAG, eventName + " <Event");
 		JSONObject jsonParams = new JSONObject(params.toHashMap());
 		if(peripheralService != null)
@@ -133,12 +133,14 @@ public class Peripheral extends BluetoothGattCallback {
 			map.putInt("status", status);
 		}
 		sendEvent(eventName, map);
-		if(eventName.equals("BleManagerDisconnectPeripheral") && peripheralService != null) {
+		// Added by PBSC
+		if (eventName.equals("BleManagerDisconnectPeripheral") && peripheralService != null) {
 			peripheralService.stopService();
 		}
 		Log.d(BleManager.LOG_TAG, "Peripheral event (" + eventName + "):" + device.getAddress());
 	}
 
+	// Here type of "activity" has been changed from "Activity" to "Context" by PBSC
 	public void connect(Callback callback, Context activity) {
 		if (!connected) {
 			BluetoothDevice device = getDevice();
@@ -162,8 +164,7 @@ public class Peripheral extends BluetoothGattCallback {
 					gatt = device.connectGatt(activity, false, this);
 				}
 			}
-			onConnectionStateChange(gatt, 0,BluetoothGatt.STATE_CONNECTED);
-			} else {
+		} else {
 			if (gatt != null) {
 				Log.d(BleManager.LOG_TAG, "invoking callback");
 				callback.invoke();
@@ -172,7 +173,6 @@ public class Peripheral extends BluetoothGattCallback {
 			}
 		}
 	}
-	// bt_btif : Register with GATT stack failed.
 
 	public void disconnect(boolean force) {
 		connectCallback = null;
@@ -180,7 +180,6 @@ public class Peripheral extends BluetoothGattCallback {
 		clearBuffers();
 		commandQueue.clear();
 		commandQueueBusy = false;
-
 		if (gatt != null) {
 			try {
 				gatt.disconnect();
@@ -284,13 +283,6 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 
 		return map;
-	}
-
-	static JSONObject byteArrayToJSON(byte[] bytes) throws JSONException {
-		JSONObject object = new JSONObject();
-		object.put("CDVType", "ArrayBuffer");
-		object.put("data", bytes != null ? Base64.encodeToString(bytes, Base64.NO_WRAP) : null);
-		return object;
 	}
 
 	static WritableMap byteArrayToWritableMap(byte[] bytes) throws JSONException {
