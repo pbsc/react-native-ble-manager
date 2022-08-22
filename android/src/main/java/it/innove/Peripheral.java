@@ -312,21 +312,6 @@ public class Peripheral extends BluetoothGattCallback {
 		return gatt.getService(uuid) != null;
 	}
 
-	private boolean clearServicesCache(BluetoothGatt gatt) {
-		boolean result = false;
-
-		try {
-			Method refreshMethod = gatt.getClass().getMethod("refresh");
-			if(refreshMethod != null) {
-				result = (boolean) refreshMethod.invoke(gatt);
-			}
-		} catch (Exception e) {
-			Log.e(TAG, "ERROR: Could not invoke refresh method");
-		}
-
-		return result;
-	}
-
 	private void runServicesDiscovery() {
 		new Handler(Looper.getMainLooper()).post(new Runnable() {
 			@Override
