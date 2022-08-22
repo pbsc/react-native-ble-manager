@@ -312,6 +312,7 @@ public class Peripheral extends BluetoothGattCallback {
 		return gatt.getService(uuid) != null;
 	}
 
+	// Added by PBSC
 	private void runServicesDiscovery() {
 		new Handler(Looper.getMainLooper()).post(new Runnable() {
 			@Override
@@ -343,7 +344,7 @@ public class Peripheral extends BluetoothGattCallback {
 		Log.d(BleManager.LOG_TAG, "onConnectionStateChange to " + newState + " on peripheral: " + device.getAddress()
 				+ " with status " + status);
 
-		gatt = gatta;
+		this.gatt = gatta;
 
 		if (status != BluetoothGatt.GATT_SUCCESS) {
 		    gatt.close();
@@ -367,7 +368,7 @@ public class Peripheral extends BluetoothGattCallback {
 				}
 			}; */
 
-			//mainHandler.post(discoverServicesRunnable); 
+			//mainHandler.post(discoverServicesRunnable);
 			//Added by PBSC
 			runServicesDiscovery();
 
@@ -391,7 +392,7 @@ public class Peripheral extends BluetoothGattCallback {
 			for (Callback currentCallback : callbacks) {
 				if (currentCallback != null) {
 					try {
-						currentCallback.invoke("Device disconnected");
+						currentCallback.invoke("Device disconnected STATUS: " + status);
 					} catch (Exception e) {
 						e.printStackTrace();
 					}				}
@@ -425,8 +426,6 @@ public class Peripheral extends BluetoothGattCallback {
 	public int unsignedToBytes(byte b) {
 		return b & 0xFF;
 	}
-
-	//////
 
 	@Override
 	public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
