@@ -850,7 +850,7 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 		this.retrieveServicesCallback = callback;
 		//gatt.discoverServices();
-		//Added by PBSC
+		// Added by PBSC
 		runServicesDiscovery();
 	}
 
@@ -1030,7 +1030,6 @@ public class Peripheral extends BluetoothGattCallback {
 			} else {
 				requestMTUCallback.invoke("Error requesting MTU status = " + status, null);
 			}
-
 			requestMTUCallback = null;
 		}
 	}
