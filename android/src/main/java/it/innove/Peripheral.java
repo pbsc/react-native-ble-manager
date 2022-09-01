@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.ScanRecord;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -61,6 +62,7 @@ public class Peripheral extends BluetoothGattCallback {
 
 	private final BluetoothDevice device;
 	private final Map<String, NotifyBufferContainer> bufferedCharacteristics;
+	private ScanRecord advertisingData;
 	protected byte[] advertisingDataBytes = new byte[0];
 	protected int advertisingRSSI;
 	private boolean connected = false;
@@ -104,6 +106,15 @@ public class Peripheral extends BluetoothGattCallback {
 	public Peripheral(BluetoothDevice device, ReactContext reactContext) {
 		this.device = device;
 		this.bufferedCharacteristics = new HashMap<String, NotifyBufferContainer>();
+		this.reactContext = reactContext;
+	}
+
+	@TargetApi(Build.VERSION_CODES.LOLLIPOP)
+	public Peripheral(BluetoothDevice device, int advertisingRSSI, ScanRecord scanRecord, ReactContext reactContext) {
+		this.device = device;
+		this.advertisingRSSI = advertisingRSSI;
+		this.advertisingData = scanRecord;
+		this.advertisingDataBytes = scanRecord.getBytes();;
 		this.reactContext = reactContext;
 	}
 
@@ -421,6 +432,10 @@ public class Peripheral extends BluetoothGattCallback {
 
 	public void updateData(byte[] data) {
 		advertisingDataBytes = data;
+	}
+
+	public void updateData(ScanRecord scanRecord) {
+		advertisingData = scanRecord;
 	}
 
 	public int unsignedToBytes(byte b) {
