@@ -320,7 +320,7 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void connect(String peripheralUUID, final Callback callback) {
+    public void connect(String peripheralUUID, Callback callback) {
         Log.d(LOG_TAG, "Connect to: " + peripheralUUID);
 
 		Peripheral peripheral = retrieveOrCreatePeripheral(peripheralUUID);
@@ -340,7 +340,7 @@ class BleManager extends ReactContextBaseJavaModule {
 	}
 
     @ReactMethod
-    public void disconnect(String peripheralUUID, Callback callback) {
+    public void disconnect(String peripheralUUID, boolean force, Callback callback) {
         Log.d(LOG_TAG, "Disconnect from: " + peripheralUUID);
 
         Peripheral peripheral = peripherals.get(peripheralUUID);
@@ -512,7 +512,7 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void read(String deviceUUID, String serviceUUID, String characteristicUUID, final Callback callback) {
+    public void read(String deviceUUID, String serviceUUID, String characteristicUUID, Callback callback) {
         Log.d(LOG_TAG, "Read from: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
@@ -569,7 +569,7 @@ class BleManager extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void retrieveServices(String deviceUUID, ReadableArray services, final Callback callback) {
+    public void retrieveServices(String deviceUUID, ReadableArray services, Callback callback) {
         Log.d(LOG_TAG, "Retrieve services from: " + deviceUUID);
         // Added by PBSC
         ResultReceiver reciever = new ResultReceiver(new Handler()) {
@@ -753,6 +753,11 @@ class BleManager extends ReactContextBaseJavaModule {
                     state = "off";
             }
         }
+
+        WritableMap map = Arguments.createMap();
+        map.putString("state", state);
+        Log.d(LOG_TAG, "state:" + state);
+        sendEvent("BleManagerDidUpdateState", map);
     }
 
     // This method added after upgrade 6.5 to 8.5
