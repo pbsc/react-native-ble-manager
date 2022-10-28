@@ -143,7 +143,7 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("DISCONNECT")) {
-            peripheral.disconnect();
+            peripheral.disconnect(true);
             Bundle bundle = new Bundle();
             reciever.send(0, bundle);
         }
@@ -152,7 +152,7 @@ public class PeripheralService extends Service {
             Log.d("ReactNativeBleManager", "Service start notify");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
-            peripheral.registerNotify(serviceUUID, characteristicUUID, new Callback() {
+            peripheral.registerNotify(serviceUUID, characteristicUUID,1, new Callback() {
                 @Override
                 public void invoke(Object... args) {
                     Log.d("ReactNativeBleManager", args.toString());
@@ -331,7 +331,7 @@ public class PeripheralService extends Service {
 
     public void backupEventHandler(String eventName, JSONObject params) {
         if(!eventName.equals("BleManagerDidUpdateValueForCharacteristic")) {
-            retrieveOrCreatePeripheral(lastUUID).disconnect();
+            retrieveOrCreatePeripheral(lastUUID).disconnect(true);
             return;
         }
         try {
@@ -370,15 +370,15 @@ public class PeripheralService extends Service {
                         String res = post(getLockReturnURL(serviceRecoveryData.getString("url"), lockuid), requestBody.toString(), client, serviceRecoveryData.getString("apiKey"), serviceRecoveryData.getString("token"), isInSSOMode);
                         Log.d(BleManager.LOG_TAG, "returnDone " + res);
                     }
-                    retrieveOrCreatePeripheral(lastUUID).disconnect();
+                    retrieveOrCreatePeripheral(lastUUID).disconnect(true);
             } else {
                 if(midLockingIgnoreEvent || midUnlockingIgnoreEvent) {
                     return;
                 }
-                retrieveOrCreatePeripheral(lastUUID).disconnect();
+                retrieveOrCreatePeripheral(lastUUID).disconnect(true);
             }
         } catch (JSONException | IOException e) {
-            retrieveOrCreatePeripheral(lastUUID).disconnect();
+            retrieveOrCreatePeripheral(lastUUID).disconnect(true);
             e.printStackTrace();
         }
     }

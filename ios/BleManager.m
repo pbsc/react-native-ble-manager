@@ -60,12 +60,13 @@ bool hasListeners;
         
         manager.delegate = nil;
     }
-    
-    for (CBPeripheral* p in peripherals) {
-        p.delegate = nil;
+    @synchronized(peripherals) {
+        for (CBPeripheral* p in peripherals) {
+            p.delegate = nil;
+        }
+        
+        peripherals = [NSMutableSet set];
     }
-    
-    peripherals = [NSMutableSet set];
 }
 
 +(BOOL)requiresMainQueueSetup
@@ -75,7 +76,7 @@ bool hasListeners;
 
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[@"BleManagerDidUpdateValueForCharacteristic", @"BleManagerStopScan", @"BleManagerDiscoverPeripheral", @"BleManagerConnectPeripheral", @"BleManagerDisconnectPeripheral", @"BleManagerDidUpdateState"];
+    return @[@"BleManagerDidUpdateValueForCharacteristic", @"BleManagerStopScan", @"BleManagerDiscoverPeripheral", @"BleManagerConnectPeripheral", @"BleManagerDisconnectPeripheral", @"BleManagerDidUpdateState", @"BleManagerCentralManagerWillRestoreState", @"BleManagerDidUpdateNotificationStateFor"];
 }
 
 
@@ -106,7 +107,12 @@ bool hasListeners;
 - (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
     if (error) {
         NSLog(@"Error in didUpdateNotificationStateForCharacteristic: %@", error);
-        return;
+        if (characteristic == nil){
+            return;
+        }
+        if (hasListeners) {
+            [self sendEventWithName:@"BleManagerDidUpdateNotificationStateFor" body:@{@"peripheral": peripheral.uuidAsString, @"characteristic": characteristic.UUID.UUIDString, @"isNotifying": @(false), @"domain": [error domain], @"code": @(error.code)}];
+        }
     }
     
     NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
@@ -114,18 +120,29 @@ bool hasListeners;
     if (characteristic.isNotifying) {
         RCTResponseSenderBlock notificationCallback = [notificationCallbacks objectForKey:key];
         if (notificationCallback != nil) {
-          NSLog(@"Notification began on %@", characteristic.UUID);
-          notificationCallback(@[]);
-          [notificationCallbacks removeObjectForKey:key];
+            if (error) {
+                notificationCallback(@[error]);
+            } else {
+                NSLog(@"Notification began on %@", characteristic.UUID);
+                notificationCallback(@[]);
+            }
+            [notificationCallbacks removeObjectForKey:key];
         }
     } else {
         // Notification has stopped
         RCTResponseSenderBlock stopNotificationCallback = [stopNotificationCallbacks objectForKey:key];
         if (stopNotificationCallback != nil) {
-            NSLog(@"Notification ended on %@", characteristic.UUID);
-            stopNotificationCallback(@[]);
+            if (error) {
+                stopNotificationCallback(@[error]);
+            } else {
+                NSLog(@"Notification ended on %@", characteristic.UUID);
+                stopNotificationCallback(@[]);
+            }
             [stopNotificationCallbacks removeObjectForKey:key];
         }
+    }
+    if (hasListeners) {
+        [self sendEventWithName:@"BleManagerDidUpdateNotificationStateFor" body:@{@"peripheral": peripheral.uuidAsString, @"characteristic": characteristic.UUID.UUIDString, @"isNotifying": @(characteristic.isNotifying)}];
     }
 }
 
@@ -191,14 +208,15 @@ bool hasListeners;
 - (CBPeripheral*)findPeripheralByUUID:(NSString*)uuid {
     
     CBPeripheral *peripheral = nil;
-    
-    for (CBPeripheral *p in peripherals) {
-        
-        NSString* other = p.identifier.UUIDString;
-        
-        if ([uuid isEqualToString:other]) {
-            peripheral = p;
-            break;
+    @synchronized(peripherals) {
+        for (CBPeripheral *p in peripherals) {
+            
+            NSString* other = p.identifier.UUIDString;
+            
+            if ([uuid isEqualToString:other]) {
+                peripheral = p;
+                break;
+            }
         }
     }
     return peripheral;
@@ -234,10 +252,10 @@ RCT_EXPORT_METHOD(getDiscoveredPeripherals:(nonnull RCTResponseSenderBlock)callb
     NSLog(@"Get discovered peripherals");
     NSMutableArray *discoveredPeripherals = [NSMutableArray array];
     @synchronized(peripherals) {
-      for(CBPeripheral *peripheral in peripherals){
-        NSDictionary * obj = [peripheral asDictionary];
-        [discoveredPeripherals addObject:obj];
-      }
+        for(CBPeripheral *peripheral in peripherals){
+            NSDictionary * obj = [peripheral asDictionary];
+            [discoveredPeripherals addObject:obj];
+        }
     }
     callback(@[[NSNull null], [NSArray arrayWithArray:discoveredPeripherals]]);
 }
@@ -250,13 +268,15 @@ RCT_EXPORT_METHOD(getConnectedPeripherals:(NSArray *)serviceUUIDStrings callback
         CBUUID *serviceUUID =[CBUUID UUIDWithString:uuidString];
         [serviceUUIDs addObject:serviceUUID];
     }
-
+    
     NSMutableArray *foundedPeripherals = [NSMutableArray array];
     if ([serviceUUIDs count] == 0){
-        for(CBPeripheral *peripheral in peripherals){
-            if([peripheral state] == CBPeripheralStateConnected){
-                NSDictionary * obj = [peripheral asDictionary];
-                [foundedPeripherals addObject:obj];
+        @synchronized(peripherals) {
+            for(CBPeripheral *peripheral in peripherals){
+                if([peripheral state] == CBPeripheralStateConnected){
+                    NSDictionary * obj = [peripheral asDictionary];
+                    [foundedPeripherals addObject:obj];
+                }
             }
         }
     } else {
@@ -283,6 +303,14 @@ RCT_EXPORT_METHOD(start:(NSDictionary *)options callback:(nonnull RCTResponseSen
                         forKey:CBCentralManagerOptionShowPowerAlertKey];
     }
     
+    dispatch_queue_t queue;
+    if ([[options allKeys] containsObject:@"queueIdentifierKey"]) {
+	dispatch_queue_attr_t queueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_BACKGROUND, 0);
+        queue = dispatch_queue_create([[options valueForKey:@"queueIdentifierKey"] UTF8String], queueAttributes);
+    } else {
+        queue = dispatch_get_main_queue();
+    }
+    
     if ([[options allKeys] containsObject:@"restoreIdentifierKey"]) {
         
         [initOptions setObject:[options valueForKey:@"restoreIdentifierKey"]
@@ -292,11 +320,11 @@ RCT_EXPORT_METHOD(start:(NSDictionary *)options callback:(nonnull RCTResponseSen
             manager = _sharedManager;
             manager.delegate = self;
         } else {
-            manager = [[CBCentralManager alloc] initWithDelegate:self queue:dispatch_get_main_queue() options:initOptions];
+            manager = [[CBCentralManager alloc] initWithDelegate:self queue:queue options:initOptions];
             _sharedManager = manager;
         }
     } else {
-        manager = [[CBCentralManager alloc] initWithDelegate:self queue:dispatch_get_main_queue() options:initOptions];
+        manager = [[CBCentralManager alloc] initWithDelegate:self queue:queue options:initOptions];
         _sharedManager = manager;
     }
     
@@ -306,6 +334,23 @@ RCT_EXPORT_METHOD(start:(NSDictionary *)options callback:(nonnull RCTResponseSen
 RCT_EXPORT_METHOD(scan:(NSArray *)serviceUUIDStrings timeoutSeconds:(nonnull NSNumber *)timeoutSeconds allowDuplicates:(BOOL)allowDuplicates options:(nonnull NSDictionary*)scanningOptions callback:(nonnull RCTResponseSenderBlock)callback)
 {
     NSLog(@"scan with timeout %@", timeoutSeconds);
+    
+    // Clear the peripherals before scanning again, otherwise cannot connect again after disconnection
+    // Only clear peripherals that are not connected - otherwise connections fail silently (without any
+    // onDisconnect* callback).
+    @synchronized(peripherals) {
+        NSMutableArray *connectedPeripherals = [NSMutableArray array];
+        for (CBPeripheral *peripheral in peripherals) {
+            if (([peripheral state] != CBPeripheralStateConnected) &&
+                ([peripheral state] != CBPeripheralStateConnecting)) {
+                [connectedPeripherals addObject:peripheral];
+            }
+        }
+        for (CBPeripheral *p in connectedPeripherals) {
+            [peripherals removeObject:p];
+        }
+    }
+    
     NSArray * services = [RCTConvert NSArray:serviceUUIDStrings];
     NSMutableArray *serviceUUIDs = [NSMutableArray new];
     NSDictionary *options = nil;
@@ -332,6 +377,9 @@ RCT_EXPORT_METHOD(stopScan:(nonnull RCTResponseSenderBlock)callback)
         self.scanTimer = nil;
     }
     [manager stopScan];
+    if (hasListeners) {
+        [self sendEventWithName:@"BleManagerStopScan" body:@{}];
+    }
     callback(@[[NSNull null]]);
 }
 
@@ -355,7 +403,7 @@ RCT_EXPORT_METHOD(stopScan:(nonnull RCTResponseSenderBlock)callback)
         [peripherals addObject:peripheral];
     }
     [peripheral setAdvertisementData:advertisementData RSSI:RSSI];
-        
+    
     NSLog(@"Discover peripheral: %@", [peripheral name]);
     if (hasListeners) {
         [self sendEventWithName:@"BleManagerDiscoverPeripheral" body:[peripheral asDictionary]];
@@ -398,7 +446,7 @@ RCT_EXPORT_METHOD(connect:(NSString *)peripheralUUID callback:(nonnull RCTRespon
     }
 }
 
-RCT_EXPORT_METHOD(disconnect:(NSString *)peripheralUUID  callback:(nonnull RCTResponseSenderBlock)callback)
+RCT_EXPORT_METHOD(disconnect:(NSString *)peripheralUUID force:(BOOL)force callback:(nonnull RCTResponseSenderBlock)callback)
 {
     CBPeripheral *peripheral = [self findPeripheralByUUID:peripheralUUID];
     if (peripheral) {
@@ -439,7 +487,7 @@ RCT_EXPORT_METHOD(checkState)
     NSString *errorStr = [NSString stringWithFormat:@"Peripheral connection failure: %@. (%@)", peripheral, [error localizedDescription]];
     NSLog(@"%@", errorStr);
     RCTResponseSenderBlock connectCallback = [connectCallbacks valueForKey:[peripheral uuidAsString]];
-
+    
     if (connectCallback) {
         connectCallback(@[errorStr]);
         [connectCallbacks removeObjectForKey:[peripheral uuidAsString]];
@@ -528,7 +576,8 @@ RCT_EXPORT_METHOD(writeWithoutResponse:(NSString *)deviceUUID serviceUUID:(NSStr
                 
                 offset += thisChunkSize;
                 [peripheral writeValue:chunk forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
-                [NSThread sleepForTimeInterval:(queueSleepTime / 1000)];
+		NSTimeInterval sleepTimeSeconds = (NSTimeInterval) queueSleepTime / 1000;
+                [NSThread sleepForTimeInterval: sleepTimeSeconds];
             } while (offset < length);
             
             NSLog(@"Message to write(%lu): %@ ", (unsigned long)[dataMessage length], [dataMessage hexadecimalString]);
@@ -579,19 +628,30 @@ RCT_EXPORT_METHOD(readRSSI:(NSString *)deviceUUID callback:(nonnull RCTResponseS
     
 }
 
-RCT_EXPORT_METHOD(retrieveServices:(NSString *)deviceUUID callback:(nonnull RCTResponseSenderBlock)callback)
+RCT_EXPORT_METHOD(retrieveServices:(NSString *)deviceUUID services:(NSArray<NSString *> *)services callback:(nonnull RCTResponseSenderBlock)callback)
 {
-    NSLog(@"retrieveServices");
+    NSLog(@"retrieveServices %@", services);
     
     CBPeripheral *peripheral = [self findPeripheralByUUID:deviceUUID];
     
     if (peripheral && peripheral.state == CBPeripheralStateConnected) {
         [retrieveServicesCallbacks setObject:callback forKey:[peripheral uuidAsString]];
-        [peripheral discoverServices:nil];
+        
+        NSMutableArray<CBUUID *> *uuids = [NSMutableArray new];
+        for ( NSString *string in services ) {
+            CBUUID *uuid = [CBUUID UUIDWithString:string];
+            [uuids addObject:uuid];
+        }
+        
+        if ( uuids.count > 0 ) {
+            [peripheral discoverServices:uuids];
+        } else {
+            [peripheral discoverServices:nil];
+        }
+        
     } else {
         callback(@[@"Peripheral not found or not connected"]);
     }
-    
 }
 
 RCT_EXPORT_METHOD(startNotification:(NSString *)deviceUUID serviceUUID:(NSString*)serviceUUID  characteristicUUID:(NSString*)characteristicUUID callback:(nonnull RCTResponseSenderBlock)callback)
@@ -646,7 +706,7 @@ RCT_EXPORT_METHOD(getBondedPeripherals:(nonnull RCTResponseSenderBlock)callback)
     callback(@[@"Not supported"]);
 }
 
-RCT_EXPORT_METHOD(createBond:(NSString *)deviceUUID callback:(nonnull RCTResponseSenderBlock)callback)
+RCT_EXPORT_METHOD(createBond:(NSString *)deviceUUID devicePin:(NSString *)devicePin callback:(nonnull RCTResponseSenderBlock)callback)
 {
     callback(@[@"Not supported"]);
 }
@@ -710,55 +770,57 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
 {
     NSLog(@"Peripheral Connected: %@", [peripheral uuidAsString]);
     peripheral.delegate = self;
-
+    
     // The state of the peripheral isn't necessarily updated until a small delay after didConnectPeripheral is called
     // and in the meantime didFailToConnectPeripheral may be called
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.002 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^(void){
         // didFailToConnectPeripheral should have been called already if not connected by now
-
+        
         RCTResponseSenderBlock connectCallback = [connectCallbacks valueForKey:[peripheral uuidAsString]];
-
+        
         if (connectCallback) {
             connectCallback(@[[NSNull null], [peripheral asDictionary]]);
             [connectCallbacks removeObjectForKey:[peripheral uuidAsString]];
         }
-
+        
         if (hasListeners) {
             [self sendEventWithName:@"BleManagerConnectPeripheral" body:@{@"peripheral": [peripheral uuidAsString]}];
         }
     });
+    
+    [writeQueue removeAllObjects];
 }
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     NSLog(@"Peripheral Disconnected: %@", [peripheral uuidAsString]);
-
+    
     if (error) {
         NSLog(@"Error: %@", error);
     }
-
+    
     NSString *peripheralUUIDString = [peripheral uuidAsString];
-
+    
     NSString *errorStr = [NSString stringWithFormat:@"Peripheral did disconnect: %@", peripheralUUIDString];
-
+    
     RCTResponseSenderBlock connectCallback = [connectCallbacks valueForKey:peripheralUUIDString];
     if (connectCallback) {
         connectCallback(@[errorStr]);
         [connectCallbacks removeObjectForKey:peripheralUUIDString];
     }
-
+    
     RCTResponseSenderBlock readRSSICallback = [readRSSICallbacks valueForKey:peripheralUUIDString];
     if (readRSSICallback) {
         readRSSICallback(@[errorStr]);
         [readRSSICallbacks removeObjectForKey:peripheralUUIDString];
     }
-
+    
     RCTResponseSenderBlock retrieveServicesCallback = [retrieveServicesCallbacks valueForKey:peripheralUUIDString];
     if (retrieveServicesCallback) {
         retrieveServicesCallback(@[errorStr]);
         [retrieveServicesCallbacks removeObjectForKey:peripheralUUIDString];
     }
-
+    
     NSArray* ourReadCallbacks = readCallbacks.allKeys;
     for (id key in ourReadCallbacks) {
         if ([key hasPrefix:peripheralUUIDString]) {
@@ -769,7 +831,7 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
             }
         }
     }
-
+    
     NSArray* ourWriteCallbacks = writeCallbacks.allKeys;
     for (id key in ourWriteCallbacks) {
         if ([key hasPrefix:peripheralUUIDString]) {
@@ -780,7 +842,7 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
             }
         }
     }
-
+    
     NSArray* ourNotificationCallbacks = notificationCallbacks.allKeys;
     for (id key in ourNotificationCallbacks) {
         if ([key hasPrefix:peripheralUUIDString]) {
@@ -791,7 +853,7 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
             }
         }
     }
-
+    
     NSArray* ourStopNotificationsCallbacks = stopNotificationCallbacks.allKeys;
     for (id key in ourStopNotificationsCallbacks) {
         if ([key hasPrefix:peripheralUUIDString]) {
@@ -802,9 +864,13 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
             }
         }
     }
-
+    
     if (hasListeners) {
-        [self sendEventWithName:@"BleManagerDisconnectPeripheral" body:@{@"peripheral": [peripheral uuidAsString]}];
+			if (error) {
+				[self sendEventWithName:@"BleManagerDisconnectPeripheral" body:@{@"peripheral": [peripheral uuidAsString], @"domain": [error domain], @"code": @(error.code)}];
+			} else {
+				[self sendEventWithName:@"BleManagerDisconnectPeripheral" body:@{@"peripheral": [peripheral uuidAsString]}];
+			}
     }
 }
 
@@ -820,8 +886,13 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
     [retrieveServicesLatches setObject:servicesForPeriperal forKey:[peripheral uuidAsString]];
     for (CBService *service in peripheral.services) {
         NSLog(@"Service %@ %@", service.UUID, service.description);
-        [peripheral discoverCharacteristics:nil forService:service]; // discover all is slow
+        [peripheral discoverIncludedServices:nil forService:service]; // discover included services
+        [peripheral discoverCharacteristics:nil forService:service]; // discover characteristics for service
     }
+}
+
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverIncludedServicesForService:(CBService *)service error:(NSError *)error {
+    [peripheral discoverCharacteristics:nil forService:service]; // discover characteristics for included service
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
@@ -951,7 +1022,20 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
 
 -(void)centralManager:(CBCentralManager *)central willRestoreState:(NSDictionary<NSString *,id> *)dict
 {
-    NSLog(@"centralManager willRestoreState");
+    NSArray<CBPeripheral *> *restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey];
+
+    if (restoredPeripherals.count > 0) {
+        @synchronized(peripherals) {
+            peripherals = [restoredPeripherals mutableCopy];
+
+            NSMutableArray *data = [NSMutableArray new];
+            for (CBPeripheral *peripheral in peripherals) {
+                [data addObject:[peripheral asDictionary]];
+            }
+
+            [self sendEventWithName:@"BleManagerCentralManagerWillRestoreState" body:@{@"peripherals": data}];
+        }
+    }
 }
 
 +(CBCentralManager *)getCentralManager
@@ -961,7 +1045,7 @@ RCT_EXPORT_METHOD(requestMTU:(NSString *)deviceUUID mtu:(NSInteger)mtu callback:
 
 +(BleManager *)getInstance
 {
-  return _instance;
+    return _instance;
 }
 
 @end

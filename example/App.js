@@ -1,176 +1,133 @@
-import React, { Component } from 'react';
+/**
+ * Sample BLE React Native App
+ *
+ * @format
+ * @flow strict-local
+ */
+
+import React, {
+  useState,
+  useEffect,
+} from 'react';
 import {
-  AppRegistry,
+  SafeAreaView,
   StyleSheet,
-  Text,
+  ScrollView,
   View,
-  TouchableHighlight,
-  NativeAppEventEmitter,
-  NativeEventEmitter,
+  Text,
+  StatusBar,
   NativeModules,
+  NativeEventEmitter,
+  Button,
   Platform,
   PermissionsAndroid,
-  ListView,
-  ScrollView,
-  AppState,
-  Dimensions,
+  FlatList,
+  TouchableHighlight,
 } from 'react-native';
-import BleManager from 'react-native-ble-manager';
 
-const window = Dimensions.get('window');
-const ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
+import {
+  Colors,
+} from 'react-native/Libraries/NewAppScreen';
 
+import BleManager from '../BleManager';
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
-export default class App extends Component {
-  constructor(){
-    super()
-
-    this.state = {
-      scanning:false,
-      peripherals: new Map(),
-      appState: ''
-    }
-
-    this.handleDiscoverPeripheral = this.handleDiscoverPeripheral.bind(this);
-    this.handleStopScan = this.handleStopScan.bind(this);
-    this.handleUpdateValueForCharacteristic = this.handleUpdateValueForCharacteristic.bind(this);
-    this.handleDisconnectedPeripheral = this.handleDisconnectedPeripheral.bind(this);
-    this.handleAppStateChange = this.handleAppStateChange.bind(this);
-  }
-
-  componentDidMount() {
-    AppState.addEventListener('change', this.handleAppStateChange);
-
-    BleManager.start({showAlert: false});
-
-    this.handlerDiscover = bleManagerEmitter.addListener('BleManagerDiscoverPeripheral', this.handleDiscoverPeripheral );
-    this.handlerStop = bleManagerEmitter.addListener('BleManagerStopScan', this.handleStopScan );
-    this.handlerDisconnect = bleManagerEmitter.addListener('BleManagerDisconnectPeripheral', this.handleDisconnectedPeripheral );
-    this.handlerUpdate = bleManagerEmitter.addListener('BleManagerDidUpdateValueForCharacteristic', this.handleUpdateValueForCharacteristic );
+const App = () => {
+  const [isScanning, setIsScanning] = useState(false);
+  const peripherals = new Map();
+  const [list, setList] = useState([]);
 
 
-
-    if (Platform.OS === 'android' && Platform.Version >= 23) {
-        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION).then((result) => {
-            if (result) {
-              console.log("Permission is OK");
-            } else {
-              PermissionsAndroid.requestPermission(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION).then((result) => {
-                if (result) {
-                  console.log("User accept");
-                } else {
-                  console.log("User refuse");
-                }
-              });
-            }
+  const startScan = () => {
+    if (!isScanning) {
+      BleManager.scan([], 3, true).then((results) => {
+        console.log('Scanning...');
+        setIsScanning(true);
+      }).catch(err => {
+        console.error(err);
       });
-    }
-
+    }    
   }
 
-  handleAppStateChange(nextAppState) {
-    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active') {
-      console.log('App has come to the foreground!')
-      BleManager.getConnectedPeripherals([]).then((peripheralsArray) => {
-        console.log('Connected peripherals: ' + peripheralsArray.length);
-      });
-    }
-    this.setState({appState: nextAppState});
+  const handleStopScan = () => {
+    console.log('Scan is stopped');
+    setIsScanning(false);
   }
 
-  componentWillUnmount() {
-    this.handlerDiscover.remove();
-    this.handlerStop.remove();
-    this.handlerDisconnect.remove();
-    this.handlerUpdate.remove();
-  }
-
-  handleDisconnectedPeripheral(data) {
-    let peripherals = this.state.peripherals;
+  const handleDisconnectedPeripheral = (data) => {
     let peripheral = peripherals.get(data.peripheral);
     if (peripheral) {
       peripheral.connected = false;
       peripherals.set(peripheral.id, peripheral);
-      this.setState({peripherals});
+      setList(Array.from(peripherals.values()));
     }
     console.log('Disconnected from ' + data.peripheral);
   }
 
-  handleUpdateValueForCharacteristic(data) {
+  const handleUpdateValueForCharacteristic = (data) => {
     console.log('Received data from ' + data.peripheral + ' characteristic ' + data.characteristic, data.value);
   }
 
-  handleStopScan() {
-    console.log('Scan is stopped');
-    this.setState({ scanning: false });
-  }
-
-  startScan() {
-    if (!this.state.scanning) {
-      this.setState({peripherals: new Map()});
-      BleManager.scan([], 3, true).then((results) => {
-        console.log('Scanning...');
-        this.setState({scanning:true});
-      });
-    }
-  }
-
-  retrieveConnected(){
+  const retrieveConnected = () => {
     BleManager.getConnectedPeripherals([]).then((results) => {
       if (results.length == 0) {
         console.log('No connected peripherals')
       }
       console.log(results);
-      var peripherals = this.state.peripherals;
       for (var i = 0; i < results.length; i++) {
         var peripheral = results[i];
         peripheral.connected = true;
         peripherals.set(peripheral.id, peripheral);
-        this.setState({ peripherals });
+        setList(Array.from(peripherals.values()));
       }
     });
   }
 
-  handleDiscoverPeripheral(peripheral){
-    var peripherals = this.state.peripherals;
-    if (!peripherals.has(peripheral.id)){
-      console.log('Got ble peripheral', peripheral);
-      peripherals.set(peripheral.id, peripheral);
-      this.setState({ peripherals })
+  const handleDiscoverPeripheral = (peripheral) => {
+    console.log('Got ble peripheral', peripheral);
+    if (!peripheral.name) {
+      peripheral.name = 'NO NAME';
     }
+    peripherals.set(peripheral.id, peripheral);
+    setList(Array.from(peripherals.values()));
   }
 
-  test(peripheral) {
+  const testPeripheral = (peripheral) => {
     if (peripheral){
       if (peripheral.connected){
         BleManager.disconnect(peripheral.id);
       }else{
         BleManager.connect(peripheral.id).then(() => {
-          let peripherals = this.state.peripherals;
           let p = peripherals.get(peripheral.id);
           if (p) {
             p.connected = true;
             peripherals.set(peripheral.id, p);
-            this.setState({peripherals});
+            setList(Array.from(peripherals.values()));
           }
           console.log('Connected to ' + peripheral.id);
 
 
           setTimeout(() => {
 
-            /* Test read current RSSI value
+            /* Test read current RSSI value */
             BleManager.retrieveServices(peripheral.id).then((peripheralData) => {
               console.log('Retrieved peripheral services', peripheralData);
 
               BleManager.readRSSI(peripheral.id).then((rssi) => {
                 console.log('Retrieved actual RSSI value', rssi);
-              });
-            });*/
+                let p = peripherals.get(peripheral.id);
+                if (p) {
+                  p.rssi = rssi;
+                  peripherals.set(peripheral.id, p);
+                  setList(Array.from(peripherals.values()));
+                }                
+              });                                          
+            });
 
             // Test using bleno's pizza example
             // https://github.com/sandeepmistry/bleno/tree/master/examples/pizza
+            /*
             BleManager.retrieveServices(peripheral.id).then((peripheralInfo) => {
               console.log(peripheralInfo);
               var service = '13333333-3333-3333-3333-333333333337';
@@ -185,14 +142,14 @@ export default class App extends Component {
                       console.log('Writed NORMAL crust');
                       BleManager.write(peripheral.id, service, bakeCharacteristic, [1,95]).then(() => {
                         console.log('Writed 351 temperature, the pizza should be BAKED');
-                        /*
-                        var PizzaBakeResult = {
-                          HALF_BAKED: 0,
-                          BAKED:      1,
-                          CRISPY:     2,
-                          BURNT:      3,
-                          ON_FIRE:    4
-                        };*/
+                        
+                        //var PizzaBakeResult = {
+                        //  HALF_BAKED: 0,
+                        //  BAKED:      1,
+                        //  CRISPY:     2,
+                        //  BURNT:      3,
+                        //  ON_FIRE:    4
+                        //};
                       });
                     });
 
@@ -201,7 +158,9 @@ export default class App extends Component {
                   console.log('Notification error', error);
                 });
               }, 200);
-            });
+            });*/
+
+            
 
           }, 900);
         }).catch((error) => {
@@ -209,61 +168,135 @@ export default class App extends Component {
         });
       }
     }
+
   }
 
-  render() {
-    const list = Array.from(this.state.peripherals.values());
-    const dataSource = ds.cloneWithRows(list);
+  useEffect(() => {
+    BleManager.start({showAlert: false});
 
+    bleManagerEmitter.addListener('BleManagerDiscoverPeripheral', handleDiscoverPeripheral);
+    bleManagerEmitter.addListener('BleManagerStopScan', handleStopScan );
+    bleManagerEmitter.addListener('BleManagerDisconnectPeripheral', handleDisconnectedPeripheral );
+    bleManagerEmitter.addListener('BleManagerDidUpdateValueForCharacteristic', handleUpdateValueForCharacteristic );
 
-    return (
-      <View style={styles.container}>
-        <TouchableHighlight style={{marginTop: 40,margin: 20, padding:20, backgroundColor:'#ccc'}} onPress={() => this.startScan() }>
-          <Text>Scan Bluetooth ({this.state.scanning ? 'on' : 'off'})</Text>
-        </TouchableHighlight>
-        <TouchableHighlight style={{marginTop: 0,margin: 20, padding:20, backgroundColor:'#ccc'}} onPress={() => this.retrieveConnected() }>
-          <Text>Retrieve connected peripherals</Text>
-        </TouchableHighlight>
-        <ScrollView style={styles.scroll}>
-          {(list.length == 0) &&
-            <View style={{flex:1, margin: 20}}>
-              <Text style={{textAlign: 'center'}}>No peripherals</Text>
-            </View>
+    if (Platform.OS === 'android' && Platform.Version >= 23) {
+      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION).then((result) => {
+          if (result) {
+            console.log("Permission is OK");
+          } else {
+            PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION).then((result) => {
+              if (result) {
+                console.log("User accept");
+              } else {
+                console.log("User refuse");
+              }
+            });
           }
-          <ListView
-            enableEmptySections={true}
-            dataSource={dataSource}
-            renderRow={(item) => {
-              const color = item.connected ? 'green' : '#fff';
-              return (
-                <TouchableHighlight onPress={() => this.test(item) }>
-                  <View style={[styles.row, {backgroundColor: color}]}>
-                    <Text style={{fontSize: 12, textAlign: 'center', color: '#333333', padding: 10}}>{item.name}</Text>
-                    <Text style={{fontSize: 8, textAlign: 'center', color: '#333333', padding: 10}}>{item.id}</Text>
-                  </View>
-                </TouchableHighlight>
-              );
-            }}
-          />
-        </ScrollView>
-      </View>
+      });
+    }  
+    
+    return (() => {
+      console.log('unmount');
+      bleManagerEmitter.removeListener('BleManagerDiscoverPeripheral', handleDiscoverPeripheral);
+      bleManagerEmitter.removeListener('BleManagerStopScan', handleStopScan );
+      bleManagerEmitter.removeListener('BleManagerDisconnectPeripheral', handleDisconnectedPeripheral );
+      bleManagerEmitter.removeListener('BleManagerDidUpdateValueForCharacteristic', handleUpdateValueForCharacteristic );
+    })
+  }, []);
+
+  const renderItem = (item) => {
+    const color = item.connected ? 'green' : '#fff';
+    return (
+      <TouchableHighlight onPress={() => testPeripheral(item) }>
+        <View style={[styles.row, {backgroundColor: color}]}>
+          <Text style={{fontSize: 12, textAlign: 'center', color: '#333333', padding: 10}}>{item.name}</Text>
+          <Text style={{fontSize: 10, textAlign: 'center', color: '#333333', padding: 2}}>RSSI: {item.rssi}</Text>
+          <Text style={{fontSize: 8, textAlign: 'center', color: '#333333', padding: 2, paddingBottom: 20}}>{item.id}</Text>
+        </View>
+      </TouchableHighlight>
     );
   }
-}
+
+  return (
+    <>
+      <StatusBar barStyle="dark-content" />
+      <SafeAreaView>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          style={styles.scrollView}>
+          {global.HermesInternal == null ? null : (
+            <View style={styles.engine}>
+              <Text style={styles.footer}>Engine: Hermes</Text>
+            </View>
+          )}
+          <View style={styles.body}>
+            
+            <View style={{margin: 10}}>
+              <Button 
+                title={'Scan Bluetooth (' + (isScanning ? 'on' : 'off') + ')'}
+                onPress={() => startScan() } 
+              />            
+            </View>
+
+            <View style={{margin: 10}}>
+              <Button title="Retrieve connected peripherals" onPress={() => retrieveConnected() } />
+            </View>
+
+            {(list.length == 0) &&
+              <View style={{flex:1, margin: 20}}>
+                <Text style={{textAlign: 'center'}}>No peripherals</Text>
+              </View>
+            }
+          
+          </View>              
+        </ScrollView>
+        <FlatList
+            data={list}
+            renderItem={({ item }) => renderItem(item) }
+            keyExtractor={item => item.id}
+          />              
+      </SafeAreaView>
+    </>
+  );
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    width: window.width,
-    height: window.height
+  scrollView: {
+    backgroundColor: Colors.lighter,
   },
-  scroll: {
-    flex: 1,
-    backgroundColor: '#f0f0f0',
-    margin: 10,
+  engine: {
+    position: 'absolute',
+    right: 0,
   },
-  row: {
-    margin: 10
+  body: {
+    backgroundColor: Colors.white,
+  },
+  sectionContainer: {
+    marginTop: 32,
+    paddingHorizontal: 24,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  sectionDescription: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '400',
+    color: Colors.dark,
+  },
+  highlight: {
+    fontWeight: '700',
+  },
+  footer: {
+    color: Colors.dark,
+    fontSize: 12,
+    fontWeight: '600',
+    padding: 4,
+    paddingRight: 12,
+    textAlign: 'right',
   },
 });
+
+export default App;
