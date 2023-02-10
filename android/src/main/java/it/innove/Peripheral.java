@@ -182,7 +182,7 @@ public class Peripheral extends BluetoothGattCallback {
 		});
 	}
 
-	public void disconnect(boolean force) {
+	public void disconnect(final Callback callback, final boolean force) {
 		mainHandler.post(() -> {
 			connectCallback = null;
 			connected = false;

@@ -346,7 +346,7 @@ class BleManager extends ReactContextBaseJavaModule {
 
         Peripheral peripheral = peripherals.get(peripheralUUID);
         if (peripheral != null) {
-            //peripheral.disconnect(force);
+            //peripheral.disconnect(callback, force);
             //callback.invoke();
             //Added by PBSC
             Intent serviceIntent = new Intent(getReactApplicationContext(), PeripheralService.class)
