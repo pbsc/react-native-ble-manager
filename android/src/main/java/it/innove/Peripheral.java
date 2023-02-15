@@ -172,11 +172,8 @@ public class Peripheral extends BluetoothGattCallback {
 					Log.d(BleManager.LOG_TAG, "invoking callback");
 					callback.invoke();
 				} else {
-					if (gatt != null) {
-						callback.invoke();
-					} else {
-						callback.invoke("BluetoothGatt is null");
-					}
+					callback.invoke("BluetoothGatt is null");
+					
 				}
 			}
 		});
