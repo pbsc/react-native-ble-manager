@@ -143,7 +143,7 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("DISCONNECT")) {
-            peripheral.disconnect(true);
+            peripheral.disconnect(null, true);
             Bundle bundle = new Bundle();
             reciever.send(0, bundle);
         }
@@ -331,7 +331,7 @@ public class PeripheralService extends Service {
 
     public void backupEventHandler(String eventName, JSONObject params) {
         if(!eventName.equals("BleManagerDidUpdateValueForCharacteristic")) {
-            retrieveOrCreatePeripheral(lastUUID).disconnect(true);
+            retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             return;
         }
         try {
@@ -370,15 +370,15 @@ public class PeripheralService extends Service {
                         String res = post(getLockReturnURL(serviceRecoveryData.getString("url"), lockuid), requestBody.toString(), client, serviceRecoveryData.getString("apiKey"), serviceRecoveryData.getString("token"), isInSSOMode);
                         Log.d(BleManager.LOG_TAG, "returnDone " + res);
                     }
-                    retrieveOrCreatePeripheral(lastUUID).disconnect(true);
+                    retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             } else {
                 if(midLockingIgnoreEvent || midUnlockingIgnoreEvent) {
                     return;
                 }
-                retrieveOrCreatePeripheral(lastUUID).disconnect(true);
+                retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             }
         } catch (JSONException | IOException e) {
-            retrieveOrCreatePeripheral(lastUUID).disconnect(true);
+            retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             e.printStackTrace();
         }
     }
