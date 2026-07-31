@@ -31,6 +31,11 @@ export interface Spec extends TurboModule {
     callback: (error: CallbackError) => void
   ): void;
 
+  setServiceRecoveryData(
+    data: Object | null,
+    callback: (error: CallbackError) => void
+  ): void;
+
   retrieveServices(
     peripheralUUID: string,
     services: string[],

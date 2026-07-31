@@ -11,6 +11,7 @@ import {
   Peripheral,
   PeripheralInfo,
   ScanOptions,
+  ServiceRecoveryData,
   StartOptions,
   EventCallback,
   BleConnectPeripheralEvent,
@@ -295,6 +296,22 @@ class BleManager {
           }
         }
       );
+    });
+  }
+
+  /**
+   * [Android only]
+   * Stores recovery context used by PeripheralService for temp-lock/return API calls.
+   */
+  setServiceRecoveryData(data: ServiceRecoveryData | null) {
+    return new Promise<void>((fulfill, reject) => {
+      BleManagerModule.setServiceRecoveryData(data, (error: string | null) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill();
+        }
+      });
     });
   }
 

@@ -16,11 +16,16 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.ResultReceiver;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Arguments;
@@ -30,10 +35,20 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableNativeArray;
+import com.facebook.react.bridge.WritableNativeMap;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,6 +92,56 @@ public class BleManager extends NativeBleManagerSpec {
     private final @Nullable CompanionScanner companionScanner;
     public static ReadableMap moduleOptions;
 
+    private ResultReceiver getReceiver(final Callback callback) {
+        return new ResultReceiver(new Handler()) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
+                if (args != null) {
+                    callback.invoke(args.toArray(new Object[args.size()]));
+                } else {
+                    callback.invoke();
+                }
+            }
+        };
+    }
+
+    private ResultReceiver getEventReciever() {
+        return new ResultReceiver(new Handler()) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                String eventName = resultData.getString("EVENTNAME");
+                String paramsStr = resultData.getString("PARAMS");
+                WritableMap params = null;
+                if (paramsStr != null) {
+                    try {
+                        params = convertJsonToMap(new JSONObject(paramsStr));
+                    } catch (JSONException e) {
+                        Log.e(LOG_TAG, "PBSC event params parse failed", e);
+                        return;
+                    }
+                }
+                switch (eventName) {
+                    case "BleManagerConnectPeripheral":
+                        emitOnConnectPeripheral(params);
+                        break;
+                    case "BleManagerDisconnectPeripheral":
+                        emitOnDisconnectPeripheral(params);
+                        break;
+                    case "BleManagerDidUpdateValueForCharacteristic":
+                        emitOnDidUpdateValueForCharacteristic(params);
+                        break;
+                    default:
+                        Log.w(LOG_TAG, "Unknown PBSC event: " + eventName);
+                }
+            }
+        };
+    }
+
+    private void startPbscService(Intent intent) {
+        ContextCompat.startForegroundService(getReactApplicationContext(), intent);
+    }
+
     public ReactApplicationContext getReactContext() {
         return reactContext;
     }
@@ -85,7 +150,7 @@ public class BleManager extends NativeBleManagerSpec {
 
         @Override
         public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent intent) {
-            Log.d(LOG_TAG, "onActivityResult");
+            PbscLog.d( "onActivityResult");
             if (requestCode == ENABLE_REQUEST && enableBluetoothCallback != null) {
                 if (resultCode == RESULT_OK) {
                     enableBluetoothCallback.invoke();
@@ -108,7 +173,7 @@ public class BleManager extends NativeBleManagerSpec {
         @SuppressLint("MissingPermission")
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.d(LOG_TAG, "onReceive");
+            PbscLog.d( "onReceive");
             final String action = intent.getAction();
 
             if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
@@ -138,7 +203,7 @@ public class BleManager extends NativeBleManagerSpec {
 
                 WritableMap map = Arguments.createMap();
                 map.putString("state", stringState);
-                Log.d(LOG_TAG, "state: " + stringState);
+                PbscLog.d( "state: " + stringState);
                 emitOnDidUpdateState(map);
 
             } else if (action.equals(BluetoothDevice.ACTION_BOND_STATE_CHANGED)) {
@@ -164,7 +229,7 @@ public class BleManager extends NativeBleManagerSpec {
                         bondStateStr = "BOND_NONE";
                         break;
                 }
-                Log.d(LOG_TAG, "bond state: " + bondStateStr);
+                PbscLog.d( "bond state: " + bondStateStr);
 
                 if (bondRequest != null && bondRequest.uuid.equals(device.getAddress())) {
                     if (bondState == BluetoothDevice.BOND_BONDED) {
@@ -224,7 +289,7 @@ public class BleManager extends NativeBleManagerSpec {
                 : null;
 
         reactContext.addActivityEventListener(mActivityEventListener);
-        Log.d(LOG_TAG, "BleManager created");
+        PbscLog.d( "BleManager created");
     }
 
     @NonNull
@@ -250,9 +315,9 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void start(ReadableMap options, Callback callback) {
-        Log.d(LOG_TAG, "start");
+        PbscLog.d( "start");
         if (getBluetoothAdapter() == null) {
-            Log.d(LOG_TAG, "No bluetooth support");
+            PbscLog.d( "No bluetooth support");
             callback.invoke("No bluetooth support");
             return;
         }
@@ -279,12 +344,12 @@ public class BleManager extends NativeBleManagerSpec {
         }
 
         callback.invoke();
-        Log.d(LOG_TAG, "BleManager initialized");
+        PbscLog.d( "BleManager initialized");
     }
 
     @ReactMethod
     public void isStarted(Callback callback) {
-        Log.d(LOG_TAG, "isStarted");
+        PbscLog.d( "isStarted");
         callback.invoke(null, scanManager != null);
     }
 
@@ -292,7 +357,7 @@ public class BleManager extends NativeBleManagerSpec {
     @ReactMethod
     public void enableBluetooth(Callback callback) {
         if (getBluetoothAdapter() == null) {
-            Log.d(LOG_TAG, "No bluetooth support");
+            PbscLog.d( "No bluetooth support");
             callback.invoke("No bluetooth support");
             return;
         }
@@ -318,9 +383,9 @@ public class BleManager extends NativeBleManagerSpec {
     @ReactMethod
     public void scan(ReadableMap scanningOptions,
                      Callback callback) {
-        Log.d(LOG_TAG, "scan");
+        PbscLog.d( "scan");
         if (getBluetoothAdapter() == null) {
-            Log.d(LOG_TAG, "No bluetooth support");
+            PbscLog.d( "No bluetooth support");
             callback.invoke("No bluetooth support");
             return;
         }
@@ -359,9 +424,9 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void stopScan(Callback callback) {
-        Log.d(LOG_TAG, "Stop scan");
+        PbscLog.d( "Stop scan");
         if (getBluetoothAdapter() == null) {
-            Log.d(LOG_TAG, "No bluetooth support");
+            PbscLog.d( "No bluetooth support");
             callback.invoke("No bluetooth support");
             return;
         }
@@ -381,7 +446,7 @@ public class BleManager extends NativeBleManagerSpec {
     @SuppressLint("MissingPermission")
     @ReactMethod
     public void createBond(String peripheralUUID, String peripheralPin, Callback callback) {
-        Log.d(LOG_TAG, "Request bond to: " + peripheralUUID);
+        PbscLog.d( "Request bond to: " + peripheralUUID);
 
         Set<BluetoothDevice> deviceSet = getBluetoothAdapter().getBondedDevices();
         for (BluetoothDevice device : deviceSet) {
@@ -399,7 +464,7 @@ public class BleManager extends NativeBleManagerSpec {
             callback.invoke("Only allow one bond request at a time");
             return;
         } else if (peripheral.getDevice().createBond()) {
-            Log.d(LOG_TAG, "Request bond successful for: " + peripheralUUID);
+            PbscLog.d( "Request bond successful for: " + peripheralUUID);
             bondRequest = new BondRequest(peripheralUUID, peripheralPin, callback); // request bond success, waiting for broadcast
             return;
         }
@@ -409,7 +474,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void removeBond(String peripheralUUID, Callback callback) {
-        Log.d(LOG_TAG, "Remove bond to: " + peripheralUUID);
+        PbscLog.d( "Remove bond to: " + peripheralUUID);
 
         Peripheral peripheral = retrieveOrCreatePeripheral(peripheralUUID);
         if (peripheral == null) {
@@ -422,7 +487,7 @@ public class BleManager extends NativeBleManagerSpec {
                 removeBondRequest = new BondRequest(peripheralUUID, callback);
                 return;
             } catch (Exception e) {
-                Log.d(LOG_TAG, "Error in remove bond: " + peripheralUUID, e);
+                PbscLog.d( "Error in remove bond: " + peripheralUUID, e);
                 callback.invoke("Remove bond request fail");
             }
         }
@@ -431,31 +496,60 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void connect(String peripheralUUID, ReadableMap options, Callback callback) {
-        Log.d(LOG_TAG, "Connect to: " + peripheralUUID);
+        PbscLog.d( "Connect to: " + peripheralUUID);
 
         Peripheral peripheral = retrieveOrCreatePeripheral(peripheralUUID);
         if (peripheral == null) {
             callback.invoke("Invalid peripheral uuid");
             return;
         }
-        peripheral.connect(callback, getCurrentActivity(), options);
+        startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                .putExtra("UUID", peripheralUUID)
+                .putExtra("ACTION", "CONNECT")
+                .putExtra("resultReciever", getReceiver(callback))
+                .putExtra("eventReciever", getEventReciever()));
     }
 
     @ReactMethod
     public void disconnect(String peripheralUUID, boolean force, Callback callback) {
-        Log.d(LOG_TAG, "Disconnect from: " + peripheralUUID);
+        PbscLog.d( "Disconnect from: " + peripheralUUID);
 
         Peripheral peripheral = peripherals.get(peripheralUUID);
         if (peripheral != null) {
-            peripheral.disconnect(callback, force);
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", peripheralUUID)
+                    .putExtra("ACTION", "DISCONNECT")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
 
     @ReactMethod
+    public void setServiceRecoveryData(ReadableMap data, Callback callback) {
+        if (data != null) {
+            try {
+                PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext())
+                        .edit()
+                        .putString("serviceRecoveryData", convertMapToJson(data).toString())
+                        .commit();
+            } catch (JSONException e) {
+                callback.invoke("Write service recovery data failed due to JSONException");
+                return;
+            }
+        } else {
+            PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext())
+                    .edit()
+                    .putString("serviceRecoveryData", new JsonObject().toString())
+                    .commit();
+        }
+        callback.invoke();
+    }
+
+    @ReactMethod
     public void startNotificationWithBuffer(String deviceUUID, String serviceUUID, String characteristicUUID,
                                             double bufferLength, Callback callback) {
-        Log.d(LOG_TAG, "startNotification");
+        PbscLog.d( "startNotification");
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -479,7 +573,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void startNotification(String deviceUUID, String serviceUUID, String characteristicUUID, Callback callback) {
-        Log.d(LOG_TAG, "startNotification");
+        PbscLog.d( "startNotification");
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -495,19 +589,20 @@ public class BleManager extends NativeBleManagerSpec {
         }
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.registerNotify(UUIDHelper.uuidFromString(serviceUUID),
-                        UUIDHelper.uuidFromString(characteristicUUID), 1, callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "STARTNOTIFICATION")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
 
     @ReactMethod
     public void stopNotification(String deviceUUID, String serviceUUID, String characteristicUUID, Callback callback) {
-        Log.d(LOG_TAG, "stopNotification");
+        PbscLog.d( "stopNotification");
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -523,12 +618,13 @@ public class BleManager extends NativeBleManagerSpec {
         }
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.removeNotify(UUIDHelper.uuidFromString(serviceUUID),
-                        UUIDHelper.uuidFromString(characteristicUUID), callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "STOPNOTIFICATION")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
@@ -536,7 +632,7 @@ public class BleManager extends NativeBleManagerSpec {
     @ReactMethod
     public void write(String deviceUUID, String serviceUUID, String characteristicUUID, ReadableArray message,
                       double maxByteSize, Callback callback) {
-        Log.d(LOG_TAG, "Write to: " + deviceUUID);
+        PbscLog.d( "Write to: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -552,17 +648,22 @@ public class BleManager extends NativeBleManagerSpec {
         }
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                byte[] decoded = new byte[message.size()];
-                for (int i = 0; i < message.size(); i++) {
-                    decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
-                }
-                Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
-                peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
-                        decoded, (int) maxByteSize, null, callback, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-            } else {
-                callback.invoke("Peripheral not connected", null);
+            byte[] decoded = new byte[message.size()];
+            for (int i = 0; i < message.size(); i++) {
+                decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
             }
+            String strMessage = bytesToHex(decoded);
+            PbscLog.d( "Message(" + decoded.length + "): " + strMessage);
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("DECODED", decoded)
+                    .putExtra("MESSAGE", strMessage)
+                    .putExtra("MAXBYTESIZE", (int) maxByteSize)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "WRITE")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
@@ -570,7 +671,7 @@ public class BleManager extends NativeBleManagerSpec {
     @ReactMethod
     public void writeWithoutResponse(String deviceUUID, String serviceUUID, String characteristicUUID,
                                      ReadableArray message, double maxByteSize, double queueSleepTime, Callback callback) {
-        Log.d(LOG_TAG, "Write without response to: " + deviceUUID);
+        PbscLog.d( "Write without response to: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -586,24 +687,27 @@ public class BleManager extends NativeBleManagerSpec {
         }
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                byte[] decoded = new byte[message.size()];
-                for (int i = 0; i < message.size(); i++) {
-                    decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
-                }
-                Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
-                peripheral.write(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
-                        decoded, (int) maxByteSize, (int) queueSleepTime, callback, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
-            } else {
-                callback.invoke("Peripheral not connected", null);
+            byte[] decoded = new byte[message.size()];
+            for (int i = 0; i < message.size(); i++) {
+                decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
             }
+            PbscLog.d( "Message(" + decoded.length + "): " + bytesToHex(decoded));
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("DECODED", decoded)
+                    .putExtra("MAXBYTESIZE", (int) maxByteSize)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "WRITEWITHOUTRESPONSE")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
 
     @ReactMethod
     public void read(String deviceUUID, String serviceUUID, String characteristicUUID, Callback callback) {
-        Log.d(LOG_TAG, "Read from: " + deviceUUID);
+        PbscLog.d( "Read from: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null) {
             callback.invoke("ServiceUUID and characteristicUUID required.");
             return;
@@ -617,21 +721,49 @@ public class BleManager extends NativeBleManagerSpec {
             callback.invoke("Invalid characteristic UUID format: " + characteristicUUID);
             return;
         }
+        ResultReceiver reciever = new ResultReceiver(new Handler()) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
+                String paramsStr = resultData.getString("MAP");
+                if (paramsStr != null) {
+                    try {
+                        WritableArray params = convertJsonToArray(new JSONArray(paramsStr));
+                        if (args != null) {
+                            args.add(params);
+                        } else {
+                            args = new ArrayList();
+                            args.add(null);
+                            args.add(params);
+                        }
+                    } catch (JSONException e) {
+                        callback.invoke();
+                        return;
+                    }
+                }
+                if (args != null) {
+                    callback.invoke(args.toArray(new Object[args.size()]));
+                } else {
+                    callback.invoke();
+                }
+            }
+        };
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.read(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID),
-                        callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("SERVICEUUID", serviceUUID)
+                    .putExtra("CHARACTERISTICUUID", characteristicUUID)
+                    .putExtra("ACTION", "READ")
+                    .putExtra("resultReciever", reciever)
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found", null);
     }
 
     @ReactMethod
     public void readDescriptor(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, Callback callback) {
-        Log.d(LOG_TAG, "Read descriptor from: " + deviceUUID);
+        PbscLog.d( "Read descriptor from: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null || descriptorUUID == null) {
             callback.invoke("ServiceUUID, CharacteristicUUID and descriptorUUID required.", null);
             return;
@@ -666,7 +798,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void writeDescriptor(String deviceUUID, String serviceUUID, String characteristicUUID, String descriptorUUID, ReadableArray message, Callback callback) {
-        Log.d(LOG_TAG, "Write descriptor from: " + deviceUUID);
+        PbscLog.d( "Write descriptor from: " + deviceUUID);
         if (serviceUUID == null || characteristicUUID == null || descriptorUUID == null) {
             callback.invoke("ServiceUUID, CharacteristicUUID and descriptorUUID required.", null);
             return;
@@ -695,49 +827,76 @@ public class BleManager extends NativeBleManagerSpec {
             for (int i = 0; i < message.size(); i++) {
                 decoded[i] = Integer.valueOf(message.getInt(i)).byteValue();
             }
-            Log.d(LOG_TAG, "Message(" + decoded.length + "): " + bytesToHex(decoded));
+            PbscLog.d( "Message(" + decoded.length + "): " + bytesToHex(decoded));
             peripheral.writeDescriptor(UUIDHelper.uuidFromString(serviceUUID), UUIDHelper.uuidFromString(characteristicUUID), UUIDHelper.uuidFromString(descriptorUUID), decoded, callback);
         }
     }
 
     @ReactMethod
     public void retrieveServices(String deviceUUID, ReadableArray services, Callback callback) {
-        Log.d(LOG_TAG, "Retrieve services from: " + deviceUUID);
+        PbscLog.d( "Retrieve services from: " + deviceUUID);
+        ResultReceiver reciever = new ResultReceiver(new Handler()) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
+                String paramsStr = resultData.getString("MAP");
+                if (paramsStr != null) {
+                    try {
+                        WritableMap params = convertJsonToMap(new JSONObject(paramsStr));
+                        if (args != null) {
+                            args.add(params);
+                        } else {
+                            args = new ArrayList();
+                            args.add(null);
+                            args.add(params);
+                        }
+                    } catch (JSONException e) {
+                        callback.invoke();
+                        return;
+                    }
+                }
+                if (args != null) {
+                    callback.invoke(args.toArray(new Object[args.size()]));
+                } else {
+                    callback.invoke();
+                }
+            }
+        };
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.retrieveServices(callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("ACTION", "RETRIEVESERVICES")
+                    .putExtra("resultReciever", reciever)
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found", null);
     }
 
     @ReactMethod
     public void refreshCache(String deviceUUID, Callback callback) {
-        Log.d(LOG_TAG, "Refreshing cache for: " + deviceUUID);
+        PbscLog.d( "Refreshing cache for: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.refreshCache(callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("ACTION", "REFRESHCACHE")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found");
     }
 
     @ReactMethod
     public void readRSSI(String deviceUUID, Callback callback) {
-        Log.d(LOG_TAG, "Read RSSI from: " + deviceUUID);
+        PbscLog.d( "Read RSSI from: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            if (peripheral.isConnected()) {
-                peripheral.readRSSI(callback);
-            } else {
-                callback.invoke("Peripheral not connected", null);
-            }
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("ACTION", "READRSSI")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else
             callback.invoke("Peripheral not found", null);
     }
@@ -772,7 +931,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void checkState(Callback callback) {
-        Log.d(LOG_TAG, "checkState");
+        PbscLog.d( "checkState");
 
         BluetoothAdapter adapter = getBluetoothAdapter();
         String state = "off";
@@ -805,7 +964,7 @@ public class BleManager extends NativeBleManagerSpec {
 
         WritableMap map = Arguments.createMap();
         map.putString("state", state);
-        Log.d(LOG_TAG, "state:" + state);
+        PbscLog.d( "state:" + state);
         emitOnDidUpdateState(map);
         callback.invoke(state);
     }
@@ -863,7 +1022,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void getDiscoveredPeripherals(Callback callback) {
-        Log.d(LOG_TAG, "Get discovered peripherals");
+        PbscLog.d( "Get discovered peripherals");
         WritableArray map = Arguments.createArray();
         synchronized (peripherals) {
             for (Map.Entry<String, Peripheral> entry : peripherals.entrySet()) {
@@ -878,11 +1037,11 @@ public class BleManager extends NativeBleManagerSpec {
     @SuppressLint("MissingPermission")
     @ReactMethod
     public void getConnectedPeripherals(ReadableArray serviceUUIDs, Callback callback) {
-        Log.d(LOG_TAG, "Get connected peripherals");
+        PbscLog.d( "Get connected peripherals");
         WritableArray map = Arguments.createArray();
 
         if (getBluetoothAdapter() == null) {
-            Log.d(LOG_TAG, "No bluetooth support");
+            PbscLog.d( "No bluetooth support");
             callback.invoke("No bluetooth support");
             return;
         }
@@ -898,7 +1057,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @Override
     public void isPeripheralConnected(String deviceUUID, Callback callback) {
-        Log.d(LOG_TAG, "Checking connection state for: " + deviceUUID);
+        PbscLog.d( "Checking connection state for: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             callback.invoke(null, peripheral.isConnected());
@@ -909,7 +1068,7 @@ public class BleManager extends NativeBleManagerSpec {
     @SuppressLint("MissingPermission")
     @ReactMethod
     public void getBondedPeripherals(Callback callback) {
-        Log.d(LOG_TAG, "Get bonded peripherals");
+        PbscLog.d( "Get bonded peripherals");
         WritableArray map = Arguments.createArray();
         Set<BluetoothDevice> deviceSet = getBluetoothAdapter().getBondedDevices();
         for (BluetoothDevice device : deviceSet) {
@@ -927,7 +1086,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void removePeripheral(String deviceUUID, Callback callback) {
-        Log.d(LOG_TAG, "Removing from list: " + deviceUUID);
+        PbscLog.d( "Removing from list: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
             synchronized (peripherals) {
@@ -944,10 +1103,15 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void requestConnectionPriority(String deviceUUID, double connectionPriority, Callback callback) {
-        Log.d(LOG_TAG, "Request connection priority of " + connectionPriority + " from: " + deviceUUID);
+        PbscLog.d( "Request connection priority of " + connectionPriority + " from: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            peripheral.requestConnectionPriority((int) connectionPriority, callback);
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("CONNECTIONPRIORITY", (int) connectionPriority)
+                    .putExtra("ACTION", "REQUESTCONNECTIONPRIORITY")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else {
             callback.invoke("Peripheral not found", null);
         }
@@ -955,10 +1119,15 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void requestMTU(String deviceUUID, double mtu, Callback callback) {
-        Log.d(LOG_TAG, "Request MTU of " + mtu + " bytes from: " + deviceUUID);
+        PbscLog.d( "Request MTU of " + mtu + " bytes from: " + deviceUUID);
         Peripheral peripheral = peripherals.get(deviceUUID);
         if (peripheral != null) {
-            peripheral.requestMTU((int) mtu, callback);
+            startPbscService(new Intent(getReactApplicationContext(), PeripheralService.class)
+                    .putExtra("UUID", deviceUUID)
+                    .putExtra("MTU", (int) mtu)
+                    .putExtra("ACTION", "REQUESTMTU")
+                    .putExtra("resultReciever", getReceiver(callback))
+                    .putExtra("eventReciever", getEventReciever()));
         } else {
             callback.invoke("Peripheral not found", null);
         }
@@ -966,7 +1135,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void getAssociatedPeripherals(Callback callback) {
-        Log.d(LOG_TAG, "Get associated peripherals");
+        PbscLog.d( "Get associated peripherals");
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
             callback.invoke("Not supported");
             return;
@@ -982,7 +1151,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @ReactMethod
     public void removeAssociatedPeripheral(String address, Callback callback) {
-        Log.d(LOG_TAG, "Remove associated peripheral: " + address);
+        PbscLog.d( "Remove associated peripheral: " + address);
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
             callback.invoke("Not supported");
             return;
@@ -1069,7 +1238,7 @@ public class BleManager extends NativeBleManagerSpec {
             // while we have lost the gatt instance
             disconnectPeripherals();
         } catch (Exception e) {
-            Log.d(LOG_TAG, "Could not disconnect peripherals", e);
+            PbscLog.d( "Could not disconnect peripherals", e);
         }
 
         if (scanManager != null) {
@@ -1077,6 +1246,109 @@ public class BleManager extends NativeBleManagerSpec {
             scanManager.stopScan(args -> {
             });
         }
+    }
+
+    private static WritableMap convertJsonToMap(JSONObject jsonObject) throws JSONException {
+        WritableMap map = new WritableNativeMap();
+        Iterator<String> iterator = jsonObject.keys();
+        while (iterator.hasNext()) {
+            String key = iterator.next();
+            Object value = jsonObject.get(key);
+            if (value instanceof JSONObject) {
+                map.putMap(key, convertJsonToMap((JSONObject) value));
+            } else if (value instanceof JSONArray) {
+                map.putArray(key, convertJsonToArray((JSONArray) value));
+            } else if (value instanceof Boolean) {
+                map.putBoolean(key, (Boolean) value);
+            } else if (value instanceof Integer) {
+                map.putInt(key, (Integer) value);
+            } else if (value instanceof Double) {
+                map.putDouble(key, (Double) value);
+            } else if (value instanceof String) {
+                map.putString(key, (String) value);
+            } else {
+                map.putString(key, value.toString());
+            }
+        }
+        return map;
+    }
+
+    private static WritableArray convertJsonToArray(JSONArray jsonArray) throws JSONException {
+        WritableArray array = new WritableNativeArray();
+        for (int i = 0; i < jsonArray.length(); i++) {
+            Object value = jsonArray.get(i);
+            if (value instanceof JSONObject) {
+                array.pushMap(convertJsonToMap((JSONObject) value));
+            } else if (value instanceof JSONArray) {
+                array.pushArray(convertJsonToArray((JSONArray) value));
+            } else if (value instanceof Boolean) {
+                array.pushBoolean((Boolean) value);
+            } else if (value instanceof Integer) {
+                array.pushInt((Integer) value);
+            } else if (value instanceof Double) {
+                array.pushDouble((Double) value);
+            } else if (value instanceof String) {
+                array.pushString((String) value);
+            } else {
+                array.pushString(value.toString());
+            }
+        }
+        return array;
+    }
+
+    private static JSONObject convertMapToJson(ReadableMap readableMap) throws JSONException {
+        JSONObject object = new JSONObject();
+        ReadableMapKeySetIterator iterator = readableMap.keySetIterator();
+        while (iterator.hasNextKey()) {
+            String key = iterator.nextKey();
+            switch (readableMap.getType(key)) {
+                case Null:
+                    object.put(key, JSONObject.NULL);
+                    break;
+                case Boolean:
+                    object.put(key, readableMap.getBoolean(key));
+                    break;
+                case Number:
+                    object.put(key, readableMap.getDouble(key));
+                    break;
+                case String:
+                    object.put(key, readableMap.getString(key));
+                    break;
+                case Map:
+                    object.put(key, convertMapToJson(readableMap.getMap(key)));
+                    break;
+                case Array:
+                    object.put(key, convertArrayToJson(readableMap.getArray(key)));
+                    break;
+            }
+        }
+        return object;
+    }
+
+    private static JSONArray convertArrayToJson(ReadableArray readableArray) throws JSONException {
+        JSONArray array = new JSONArray();
+        for (int i = 0; i < readableArray.size(); i++) {
+            switch (readableArray.getType(i)) {
+                case Null:
+                    break;
+                case Boolean:
+                    array.put(readableArray.getBoolean(i));
+                    break;
+                case Number:
+                    array.put(readableArray.getDouble(i));
+                    break;
+                case String:
+                    array.put(readableArray.getString(i));
+                    break;
+                case Map:
+                    array.put(convertMapToJson(readableArray.getMap(i)));
+                    break;
+                case Array:
+                    array.put(convertArrayToJson(readableArray.getArray(i)));
+                    break;
+            }
+        }
+        return array;
     }
 
 }

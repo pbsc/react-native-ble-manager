@@ -90,6 +90,20 @@ export interface ConnectOptions {
 }
 
 /**
+ * [Android only] Recovery context stored by PeripheralService for temp-lock/return flows.
+ */
+export interface ServiceRecoveryData {
+  lastSmartlockUsage?: string;
+  lockuid?: string;
+  url?: string;
+  apiKey?: string;
+  token?: string;
+  ssoMode?: boolean;
+  stationId?: string;
+  returnFirstOtp?: string;
+}
+
+/**
  * [Android only]
  * https://developer.android.com/reference/android/bluetooth/le/ScanSettings
  */
