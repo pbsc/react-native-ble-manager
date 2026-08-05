@@ -13,13 +13,12 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
-import android.content.pm.PackageManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.preference.PreferenceManager;
 import android.util.Base64;
 import android.util.Log;
 
@@ -113,13 +112,13 @@ public class Peripheral extends BluetoothGattCallback {
     private void forwardEventToService(String eventName, WritableMap params) {
         PbscLog.d(eventName + " <Event");
         JSONObject jsonParams = new JSONObject(params.toHashMap());
-        Bundle bundle = new Bundle();
-        bundle.putString("EVENTNAME", eventName);
-        bundle.putString("PARAMS", jsonParams.toString());
-        peripheralService.broadcastReciever.send(0, bundle);
-        boolean isForeground = PreferenceManager.getDefaultSharedPreferences(serviceContext)
-                .getBoolean("CFisActive", false);
-        if (!isForeground) {
+        if (peripheralService.broadcastReciever != null) {
+            Bundle bundle = new Bundle();
+            bundle.putString("EVENTNAME", eventName);
+            bundle.putString("PARAMS", jsonParams.toString());
+            peripheralService.broadcastReciever.send(0, bundle);
+        }
+        if (!BleManager.isHostInForeground()) {
             peripheralService.backupEventHandler(eventName, jsonParams);
         }
     }

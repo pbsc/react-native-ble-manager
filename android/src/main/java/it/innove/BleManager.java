@@ -14,23 +14,26 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.ResultReceiver;
-import android.preference.PreferenceManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.IntentCompat;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.BaseActivityEventListener;
 import com.facebook.react.bridge.Callback;
+import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableArray;
@@ -40,6 +43,7 @@ import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.bridge.WritableNativeMap;
+import com.facebook.react.common.LifecycleState;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -92,8 +96,34 @@ public class BleManager extends NativeBleManagerSpec {
     private final @Nullable CompanionScanner companionScanner;
     public static ReadableMap moduleOptions;
 
+    /** PBSC: mirrors RN AppState host resume/pause for background BLE recovery. */
+    private static volatile boolean hostResumed = false;
+
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
+    private final LifecycleEventListener hostLifecycleListener = new LifecycleEventListener() {
+        @Override
+        public void onHostResume() {
+            hostResumed = true;
+        }
+
+        @Override
+        public void onHostPause() {
+            hostResumed = false;
+        }
+
+        @Override
+        public void onHostDestroy() {
+            hostResumed = false;
+        }
+    };
+
+    static boolean isHostInForeground() {
+        return hostResumed;
+    }
+
     private ResultReceiver getReceiver(final Callback callback) {
-        return new ResultReceiver(new Handler()) {
+        return new ResultReceiver(MAIN_HANDLER) {
             @Override
             protected void onReceiveResult(int resultCode, Bundle resultData) {
                 ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
@@ -107,7 +137,7 @@ public class BleManager extends NativeBleManagerSpec {
     }
 
     private ResultReceiver getEventReciever() {
-        return new ResultReceiver(new Handler()) {
+        return new ResultReceiver(MAIN_HANDLER) {
             @Override
             protected void onReceiveResult(int resultCode, Bundle resultData) {
                 String eventName = resultData.getString("EVENTNAME");
@@ -139,7 +169,31 @@ public class BleManager extends NativeBleManagerSpec {
     }
 
     private void startPbscService(Intent intent) {
-        ContextCompat.startForegroundService(getReactApplicationContext(), intent);
+        ReactApplicationContext context = getReactApplicationContext();
+        try {
+            ContextCompat.startForegroundService(context, intent);
+        } catch (IllegalStateException e) {
+            // Android 12+ may block startForegroundService from background when the service
+            // is already running from an earlier in-foreground operation.
+            PbscLog.d("startForegroundService blocked, trying startService");
+            try {
+                context.startService(intent);
+            } catch (Exception fallbackError) {
+                Log.e(LOG_TAG, "Failed to start PBSC service", fallbackError);
+                notifyServiceStartFailed(intent, "Foreground service not allowed");
+            }
+        }
+    }
+
+    private void notifyServiceStartFailed(Intent intent, String message) {
+        ResultReceiver receiver = IntentCompat.getParcelableExtra(
+                intent, "resultReciever", ResultReceiver.class);
+        if (receiver == null) {
+            return;
+        }
+        Bundle bundle = new Bundle();
+        bundle.putString("ARGS", new Gson().toJson(new Object[]{message}));
+        receiver.send(0, bundle);
     }
 
     public ReactApplicationContext getReactContext() {
@@ -289,6 +343,8 @@ public class BleManager extends NativeBleManagerSpec {
                 : null;
 
         reactContext.addActivityEventListener(mActivityEventListener);
+        hostResumed = reactContext.getLifecycleState() == LifecycleState.RESUMED;
+        reactContext.addLifecycleEventListener(hostLifecycleListener);
         PbscLog.d( "BleManager created");
     }
 
@@ -525,11 +581,18 @@ public class BleManager extends NativeBleManagerSpec {
             callback.invoke("Peripheral not found");
     }
 
+    private static SharedPreferences getDefaultSharedPreferences(Context context) {
+        Context appContext = context.getApplicationContext();
+        return appContext.getSharedPreferences(
+                appContext.getPackageName() + "_preferences",
+                Context.MODE_PRIVATE);
+    }
+
     @ReactMethod
     public void setServiceRecoveryData(ReadableMap data, Callback callback) {
         if (data != null) {
             try {
-                PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext())
+                getDefaultSharedPreferences(getReactApplicationContext())
                         .edit()
                         .putString("serviceRecoveryData", convertMapToJson(data).toString())
                         .commit();
@@ -538,7 +601,7 @@ public class BleManager extends NativeBleManagerSpec {
                 return;
             }
         } else {
-            PreferenceManager.getDefaultSharedPreferences(getReactApplicationContext())
+            getDefaultSharedPreferences(getReactApplicationContext())
                     .edit()
                     .putString("serviceRecoveryData", new JsonObject().toString())
                     .commit();
@@ -721,7 +784,7 @@ public class BleManager extends NativeBleManagerSpec {
             callback.invoke("Invalid characteristic UUID format: " + characteristicUUID);
             return;
         }
-        ResultReceiver reciever = new ResultReceiver(new Handler()) {
+        ResultReceiver reciever = new ResultReceiver(MAIN_HANDLER) {
             @Override
             protected void onReceiveResult(int resultCode, Bundle resultData) {
                 ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
@@ -835,7 +898,7 @@ public class BleManager extends NativeBleManagerSpec {
     @ReactMethod
     public void retrieveServices(String deviceUUID, ReadableArray services, Callback callback) {
         PbscLog.d( "Retrieve services from: " + deviceUUID);
-        ResultReceiver reciever = new ResultReceiver(new Handler()) {
+        ResultReceiver reciever = new ResultReceiver(MAIN_HANDLER) {
             @Override
             protected void onReceiveResult(int resultCode, Bundle resultData) {
                 ArrayList args = new Gson().fromJson(resultData.getString("ARGS"), ArrayList.class);
@@ -1228,6 +1291,7 @@ public class BleManager extends NativeBleManagerSpec {
 
     @Override
     public void invalidate() {
+        reactContext.removeLifecycleEventListener(hostLifecycleListener);
         try {
             context.unregisterReceiver(mReceiver);
         } catch (Exception e) {

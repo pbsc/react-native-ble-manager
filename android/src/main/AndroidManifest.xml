@@ -24,6 +24,7 @@
   <application>
     <service
       android:name="it.innove.PeripheralService"
+      android:exported="false"
       android:foregroundServiceType="connectedDevice" />
   </application>
 </manifest>

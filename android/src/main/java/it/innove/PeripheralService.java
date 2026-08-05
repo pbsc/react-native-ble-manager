@@ -3,7 +3,6 @@ package it.innove;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -11,19 +10,18 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.ResultReceiver;
-import android.preference.PreferenceManager;
 import android.util.Log;
 
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -59,7 +57,6 @@ public class PeripheralService extends Service {
     public Map<String, Peripheral> peripherals = new LinkedHashMap<>();
     private BluetoothAdapter bluetoothAdapter;
     public ResultReceiver broadcastReciever;
-    private boolean isForeground;
 
     private static final String LOCK_STATUS_CHARACTERISTIC = "00001524-e513-11e5-9260-0002a5d5c51b";
     private String lastUUID;
@@ -91,25 +88,33 @@ public class PeripheralService extends Service {
         super.onCreate();
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
                 "Interaction with the bike's Smartlock",
-                NotificationManager.IMPORTANCE_DEFAULT);
+                NotificationManager.IMPORTANCE_LOW);
 
         ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+        promoteToForeground();
+    }
+
+    private Notification buildForegroundNotification() {
+        int icon = getApplicationInfo().icon;
+        if (icon == 0) {
+            icon = android.R.drawable.stat_sys_data_bluetooth;
+        }
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(icon)
+                .setContentTitle("Interacting with smartlock")
+                .setContentText("")
+                .setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .build();
     }
 
     private boolean promoteToForeground() {
-        if (isForeground) {
-            return true;
-        }
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Interacting with smartlock")
-                .setContentText("").build();
         try {
             ServiceCompat.startForeground(
                     this,
                     NOTIFICATION_ID,
-                    notification,
+                    buildForegroundNotification(),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
-            isForeground = true;
             return true;
         } catch (Exception e) {
             Log.e(BleManager.LOG_TAG, "PeripheralService startForeground failed", e);
@@ -135,7 +140,7 @@ public class PeripheralService extends Service {
     }
 
     public void stopService() {
-        stopForeground(STOP_FOREGROUND_REMOVE);
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
@@ -165,6 +170,12 @@ public class PeripheralService extends Service {
         }
 
         final Peripheral peripheral = retrieveOrCreatePeripheral(intent.getStringExtra("UUID"));
+        if (peripheral == null) {
+            Log.w(BleManager.LOG_TAG, "PeripheralService invalid UUID, stopping");
+            sendError(reciever, "Invalid peripheral uuid");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         this.broadcastReciever = IntentCompat.getParcelableExtra(
                 intent, "eventReciever", ResultReceiver.class);
         this.lastUUID = intent.getStringExtra("UUID");
@@ -189,9 +200,14 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("DISCONNECT")) {
-            peripheral.disconnect(null, true);
-            Bundle bundle = new Bundle();
-            reciever.send(0, bundle);
+            peripheral.disconnect(new Callback() {
+                @Override
+                public void invoke(Object... args) {
+                    if (reciever != null) {
+                        reciever.send(0, new Bundle());
+                    }
+                }
+            }, true);
         }
 
         if(action.equals("STARTNOTIFICATION")) {
@@ -375,13 +391,21 @@ public class PeripheralService extends Service {
         return sb.toString().substring(0, numchars);
     }
 
+    private static SharedPreferences getDefaultSharedPreferences(Context context) {
+        Context appContext = context.getApplicationContext();
+        return appContext.getSharedPreferences(
+                appContext.getPackageName() + "_preferences",
+                Context.MODE_PRIVATE);
+    }
+
     public void backupEventHandler(String eventName, JSONObject params) {
         if(!eventName.equals("BleManagerDidUpdateValueForCharacteristic")) {
             retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             return;
         }
         try {
-            JSONObject serviceRecoveryData = new JSONObject(PreferenceManager.getDefaultSharedPreferences(this).getString("serviceRecoveryData", ""));
+            JSONObject serviceRecoveryData = new JSONObject(
+                    getDefaultSharedPreferences(this).getString("serviceRecoveryData", ""));
             String lastSmartlockUsage = serviceRecoveryData.getString("lastSmartlockUsage");
             String lockuid = serviceRecoveryData.getString("lockuid");
             Boolean lastUsageIsLocking = lastSmartlockUsage.equals("TEMPORARY_LOCK")  || lastSmartlockUsage.equals("RETURN");
@@ -430,7 +454,7 @@ public class PeripheralService extends Service {
     }
 
     private String post(String url, String json, OkHttpClient client, String apiKey, String token, boolean isInSSOMode) throws IOException {
-        RequestBody body = RequestBody.create(JSON, json);
+        RequestBody body = RequestBody.create(json, JSON);
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("X-API-KEY", apiKey)
