@@ -101,7 +101,6 @@ public class PeripheralService extends Service {
         }
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(icon)
-                .setContentTitle("Interacting with smartlock")
                 .setContentText("")
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
