@@ -1,32 +1,45 @@
-#import "React/RCTBridgeModule.h"
-#import "React/RCTEventEmitter.h"
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <Foundation/Foundation.h>
 
+#ifdef RCT_NEW_ARCH_ENABLED
 
-@interface BleManager : RCTEventEmitter <RCTBridgeModule, CBCentralManagerDelegate, CBPeripheralDelegate>{
-    NSString* discoverPeripherialCallbackId;
-    NSMutableDictionary* connectCallbacks;
-    NSMutableDictionary *readCallbacks;
-    NSMutableDictionary *writeCallbacks;
-    NSMutableDictionary *readRSSICallbacks;
-    NSMutableDictionary *retrieveServicesCallbacks;
-    NSMutableArray *writeQueue;
-    NSMutableDictionary *notificationCallbacks;
-    NSMutableDictionary *stopNotificationCallbacks;
-    NSMutableDictionary *retrieveServicesLatches;
-}
+#import <BleManagerSpec/BleManagerSpec.h>
+@class SwiftBleManager;
 
-@property (strong, nonatomic) NSMutableSet *peripherals;
-@property (strong, nonatomic) CBCentralManager *manager;
-@property (weak, nonatomic) NSTimer *scanTimer;
+@interface BleManager : NativeBleManagerSpecBase <NativeBleManagerSpec>
+- (void)emitOnDiscoverPeripheral:(NSDictionary *)value;
+- (void)emitOnStopScan:(NSDictionary *)value;
+- (void)emitOnDidUpdateState:(NSDictionary *)value;
+- (void)emitOnDidUpdateValueForCharacteristic:(NSDictionary *)value;
+- (void)emitOnConnectPeripheral:(NSDictionary *)value;
+- (void)emitOnDisconnectPeripheral:(NSDictionary *)value;
+- (void)emitOnPeripheralDidBond:(NSDictionary *)value;
+- (void)emitOnCentralManagerWillRestoreState:(NSDictionary *)value;
+- (void)emitOnDidUpdateNotificationStateFor:(NSDictionary *)value;
+- (void)emitOnCompanionPeripheral:(NSDictionary *)value;
+- (void)emitOnCompanionFailure:(NSDictionary *)value;
++ (nullable CBCentralManager *)getCentralManager;
++ (nullable SwiftBleManager *)getInstance;
+@end
 
-// Returns the static CBCentralManager instance used by this library.
-// May have unexpected behavior when using multiple instances of CBCentralManager.
-// For integration with external libraries, advanced use only.
-+(CBCentralManager *)getCentralManager;
+#else
 
-// Returns the singleton instance of this class initiated by RN.
-// For integration with external libraries, advanced use only.
-+(BleManager *)getInstance;
+@interface BleManager : NSObject
+- (void)emitOnDiscoverPeripheral:(NSDictionary *)value;
+- (void)emitOnStopScan:(NSDictionary *)value;
+- (void)emitOnDidUpdateState:(NSDictionary *)value;
+- (void)emitOnDidUpdateValueForCharacteristic:(NSDictionary *)value;
+- (void)emitOnConnectPeripheral:(NSDictionary *)value;
+- (void)emitOnDisconnectPeripheral:(NSDictionary *)value;
+- (void)emitOnPeripheralDidBond:(NSDictionary *)value;
+- (void)emitOnCentralManagerWillRestoreState:(NSDictionary *)value;
+- (void)emitOnDidUpdateNotificationStateFor:(NSDictionary *)value;
+- (void)emitOnCompanionPeripheral:(NSDictionary *)value;
+- (void)emitOnCompanionFailure:(NSDictionary *)value;
+@end
 
+#endif
+
+@interface SpecChecker : NSObject
++ (BOOL)isSpecAvailable;
 @end

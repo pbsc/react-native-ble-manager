@@ -1,31 +1,110 @@
 {
-  "name": "react-native-ble-manager",
-  "version": "8.8.0",
-  "description": "A BLE module for react native.",
-  "main": "BleManager",
-  "types": "./index.d.ts",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/innoveit/react-native-ble-manager.git"
-  },
-  "bugs": {
-    "url": "https://github.com/innoveit/react-native-ble-manager/issues"
-  },
-  "keywords": [
-    "react-native",
-    "android",
-    "ios",
-    "ble",
-    "bluetooth",
-    "low energy"
-  ],
-  "license": "Apache-2.0",
-  "author": {
-    "name": "Innove",
-    "url": "https://github.com/innoveit"
-  },
-  "scripts": {
-    "version": "git add -A",
-    "postversion": "git push && git push --tags"
-  }
+    "name": "react-native-ble-manager",
+    "version": "12.5.1",
+    "description": "A BLE module for react native.",
+    "homepage": "https://github.com/pbsc/react-native-ble-manager",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/pbsc/react-native-ble-manager.git"
+    },
+    "bugs": {
+        "url": "https://github.com/innoveit/react-native-ble-manager/issues"
+    },
+    "keywords": [
+        "react-native",
+        "android",
+        "ios",
+        "ble",
+        "bluetooth",
+        "low energy"
+    ],
+    "license": "Apache-2.0",
+    "author": {
+        "name": "Innove",
+        "url": "https://github.com/innoveit"
+    },
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "module": "src/index.ts",
+    "react-native": "src/index.ts",
+    "files": [
+        "/dist",
+        "/src",
+        "/android",
+        "/ios",
+        "*.podspec",
+        "react-native.config.json",
+        "app.plugin.js",
+        "plugin/build",
+        "!ios/build",
+        "!android/build",
+        "!android/gradle",
+        "!android/gradlew",
+        "!android/gradlew.bat",
+        "!android/local.properties",
+        "!**/__tests__",
+        "!**/__fixtures__",
+        "!**/__mocks__",
+        "!**/.*"
+    ],
+    "scripts": {
+        "version": "git add -A",
+        "clean": "rimraf dist",
+        "type:check": "tsc -p tsconfig.json --noEmit",
+        "build:plugin": "tsc --build plugin",
+        "clean:plugin": "expo-module clean plugin",
+        "prepublishOnly": "npm run build",
+        "prebuild": "npm run clean && npm run clean:plugin",
+        "build:cjs": "tsc --module commonjs --outDir dist/cjs",
+        "build:esm": "tsc --outDir dist/esm",
+        "build": "npm run build:esm && npm run build:cjs && npm run build:plugin",
+        "watch": "npm run build --watch",
+        "preversion": "npm run build",
+        "postversion": "git push --follow-tags"
+    },
+    "resolutions": {
+        "@types/react": "^19.2.2"
+    },
+    "peerDependencies": {
+        "react": "*",
+        "react-native": "*"
+    },
+    "devDependencies": {
+        "@commitlint/config-conventional": "^19.6.0",
+        "@react-native/eslint-config": "^0.82.1",
+        "@types/react": "^19.2.2",
+        "eslint": "^9.39.1",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-prettier": "^5.5.4",
+        "prettier": "^3.6.2",
+        "react": "19.2.0",
+        "react-native": "0.82.1",
+        "@react-native/gradle-plugin": "^0.82.1",
+        "typescript": "^5.9.3",
+        "@expo/config-plugins": "^9.0.10",
+        "expo-module-scripts": "^4.0.2"
+    },
+    "eslintConfig": {
+        "root": true,
+        "extends": [
+            "@react-native",
+            "prettier"
+        ],
+        "rules": {
+            "react/react-in-jsx-scope": "off"
+        }
+    },
+    "eslintIgnore": [
+        "node_modules/",
+        "lib/"
+    ],
+    "codegenConfig": {
+        "name": "BleManagerSpec",
+        "type": "modules",
+        "jsSrcsDir": "src",
+        "android": {
+            "javaPackageName": "it.innove"
+        }
+    },
+    "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

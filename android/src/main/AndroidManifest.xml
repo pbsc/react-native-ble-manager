@@ -1,11 +1,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="it.innove">
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
-	<application>
-		<service android:name="it.innove.PeripheralService"/>
-		<receiver android:name="it.innove.PeripheralService$ServiceEventReciever"/>
-	</application>
+    package="it.innove"
+    xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH"
+    android:maxSdkVersion="30" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_ADMIN"
+    android:maxSdkVersion="30" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_SCAN"
+    android:usesPermissionFlags="neverForLocation"
+    tools:targetApi="s" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_CONNECT"
+    tools:targetApi="s" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <service
+      android:name="it.innove.PeripheralService"
+      android:exported="false"
+      android:foregroundServiceType="connectedDevice" />
+  </application>
 </manifest>

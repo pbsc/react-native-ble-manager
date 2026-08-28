@@ -1,4 +1,10 @@
 {
   "name": "example",
-  "displayName": "example"
+  "icon": "./icon.png",
+  "newArchEnabled": true,
+  "splash": {
+    "image": "./splash.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#ffffff"
+  }
 }

@@ -3,7 +3,6 @@ package it.innove;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -11,19 +10,18 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.ResultReceiver;
-import android.preference.PreferenceManager;
-import android.telecom.Call;
 import android.util.Log;
 
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -44,6 +42,8 @@ import java.util.UUID;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
+import androidx.core.content.IntentCompat;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -51,6 +51,9 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class PeripheralService extends Service {
+    private static final String CHANNEL_ID = "my_channel_01";
+    private static final int NOTIFICATION_ID = 1;
+
     public Map<String, Peripheral> peripherals = new LinkedHashMap<>();
     private BluetoothAdapter bluetoothAdapter;
     public ResultReceiver broadcastReciever;
@@ -75,7 +78,7 @@ public class PeripheralService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        Log.d("ReactNativeBleManager", "bind attempt");
+        PbscLog.d("bind attempt");
         return null;
     }
 
@@ -83,21 +86,48 @@ public class PeripheralService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        String CHANNEL_ID = "my_channel_01";
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+                "Interaction with the bike's Smartlock",
+                NotificationManager.IMPORTANCE_LOW);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                    "Interaction with the bike's Smartlock",
-                    NotificationManager.IMPORTANCE_DEFAULT);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+        promoteToForeground();
+    }
 
-            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+    private Notification buildForegroundNotification() {
+        int icon = getApplicationInfo().icon;
+        if (icon == 0) {
+            icon = android.R.drawable.stat_sys_data_bluetooth;
         }
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(icon)
+                .setContentText("")
+                .setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .build();
+    }
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Interacting with smartlock")
-                .setContentText("").build();
+    private boolean promoteToForeground() {
+        try {
+            ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildForegroundNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+            return true;
+        } catch (Exception e) {
+            Log.e(BleManager.LOG_TAG, "PeripheralService startForeground failed", e);
+            return false;
+        }
+    }
 
-        startForeground(1, notification);
+    private void sendError(ResultReceiver reciever, String message) {
+        if (reciever == null) {
+            return;
+        }
+        Bundle bundle = new Bundle();
+        bundle.putString("ARGS", new Gson().toJson(new Object[]{message}));
+        reciever.send(0, bundle);
     }
 
     private BluetoothAdapter getBluetoothAdapter() {
@@ -109,31 +139,57 @@ public class PeripheralService extends Service {
     }
 
     public void stopService() {
-
-        //stop foreground effectively (remove icon notification on status bar)
-        stopForeground(true);
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        final Peripheral peripheral = retrieveOrCreatePeripheral(intent.getStringExtra("UUID"));
+        if (intent == null) {
+            Log.w(BleManager.LOG_TAG, "PeripheralService restarted with null intent, stopping");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        final ResultReceiver reciever = IntentCompat.getParcelableExtra(
+                intent, "resultReciever", ResultReceiver.class);
+
+        if (!promoteToForeground()) {
+            sendError(reciever, "Foreground service not allowed");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         final String action = intent.getStringExtra("ACTION");
-        final ResultReceiver reciever = intent.getParcelableExtra("resultReciever");
-        this.broadcastReciever = intent.getParcelableExtra("eventReciever");
+        if (action == null) {
+            Log.w(BleManager.LOG_TAG, "PeripheralService missing ACTION, stopping");
+            sendError(reciever, "Missing service action");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        final Peripheral peripheral = retrieveOrCreatePeripheral(intent.getStringExtra("UUID"));
+        if (peripheral == null) {
+            Log.w(BleManager.LOG_TAG, "PeripheralService invalid UUID, stopping");
+            sendError(reciever, "Invalid peripheral uuid");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        this.broadcastReciever = IntentCompat.getParcelableExtra(
+                intent, "eventReciever", ResultReceiver.class);
         this.lastUUID = intent.getStringExtra("UUID");
 
-        Log.d("ReactNativeBleManager", "Service started");
-        Log.d("ReactNativeBleManager", action);
+        PbscLog.d("Service started");
+        PbscLog.d(action);
 
 
         if(action.equals("CONNECT")) {
-            Log.d("ReactNativeBleManager", "Service connect");
+            PbscLog.d("Service connect");
             peripheral.connect(new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -143,20 +199,25 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("DISCONNECT")) {
-            peripheral.disconnect(null, true);
-            Bundle bundle = new Bundle();
-            reciever.send(0, bundle);
+            peripheral.disconnect(new Callback() {
+                @Override
+                public void invoke(Object... args) {
+                    if (reciever != null) {
+                        reciever.send(0, new Bundle());
+                    }
+                }
+            }, true);
         }
 
         if(action.equals("STARTNOTIFICATION")) {
-            Log.d("ReactNativeBleManager", "Service start notify");
+            PbscLog.d("Service start notify");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
-            peripheral.registerNotify(serviceUUID, characteristicUUID,1, new Callback() {
+            peripheral.registerNotify(serviceUUID, characteristicUUID, 1, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -165,14 +226,14 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("STOPNOTIFICATION")) {
-            Log.d("ReactNativeBleManager", "Service stop notify");
+            PbscLog.d("Service stop notify");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
             peripheral.removeNotify(serviceUUID, characteristicUUID, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -181,15 +242,15 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("WRITE")) {
-            Log.d("ReactNativeBleManager", "Service start write");
+            PbscLog.d("Service start write");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
             final String strMessage = intent.getStringExtra("MESSAGE");
             peripheral.write(serviceUUID, characteristicUUID, intent.getByteArrayExtra("DECODED"), intent.getIntExtra("MAXBYTESIZE", 20), null, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     lastWrittenMessage = strMessage;
@@ -204,8 +265,8 @@ public class PeripheralService extends Service {
             peripheral.write(serviceUUID, characteristicUUID, intent.getByteArrayExtra("DECODED"), intent.getIntExtra("MAXBYTESIZE", 20), null, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -214,14 +275,14 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("READ")) {
-            Log.d("ReactNativeBleManager", "Service read");
+            PbscLog.d("Service read");
             UUID serviceUUID = UUIDHelper.uuidFromString(intent.getStringExtra("SERVICEUUID"));
             UUID characteristicUUID = UUIDHelper.uuidFromString(intent.getStringExtra("CHARACTERISTICUUID"));
             peripheral.read(serviceUUID, characteristicUUID, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
 
                     if(args.length > 1 && args[1] != null) {
@@ -239,12 +300,12 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("RETRIEVESERVICES")) {
-            Log.d("ReactNativeBleManager", "Service retrieve");
+            PbscLog.d("Service retrieve");
             peripheral.retrieveServices(new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args[0]));
                     if(args.length > 1 && args[1] != null) {
@@ -262,12 +323,12 @@ public class PeripheralService extends Service {
         }
 
         if(action.equals("REFRESHCACHE")) {
-            Log.d("ReactNativeBleManager", "Service refresh cache");
+            PbscLog.d("Service refresh cache");
             peripheral.refreshCache(new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -279,8 +340,8 @@ public class PeripheralService extends Service {
             peripheral.readRSSI(new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -293,8 +354,8 @@ public class PeripheralService extends Service {
             peripheral.requestConnectionPriority(connectionPriority, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -307,8 +368,8 @@ public class PeripheralService extends Service {
             peripheral.requestMTU(mtu, new Callback() {
                 @Override
                 public void invoke(Object... args) {
-                    Log.d("ReactNativeBleManager", args.toString());
-                    Log.d("ReactNativeBleManager", "Callback Called");
+                    PbscLog.d(args.toString());
+                    PbscLog.d("Callback Called");
                     Bundle bundle = new Bundle();
                     bundle.putString("ARGS", new Gson().toJson(args));
                     reciever.send(0, bundle);
@@ -316,7 +377,7 @@ public class PeripheralService extends Service {
             });
         }
 
-        return 0;
+        return START_NOT_STICKY;
     }
 
     private String getRandomHexString(int numchars){
@@ -329,13 +390,21 @@ public class PeripheralService extends Service {
         return sb.toString().substring(0, numchars);
     }
 
+    private static SharedPreferences getDefaultSharedPreferences(Context context) {
+        Context appContext = context.getApplicationContext();
+        return appContext.getSharedPreferences(
+                appContext.getPackageName() + "_preferences",
+                Context.MODE_PRIVATE);
+    }
+
     public void backupEventHandler(String eventName, JSONObject params) {
         if(!eventName.equals("BleManagerDidUpdateValueForCharacteristic")) {
             retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             return;
         }
         try {
-            JSONObject serviceRecoveryData = new JSONObject(PreferenceManager.getDefaultSharedPreferences(this).getString("serviceRecoveryData", ""));
+            JSONObject serviceRecoveryData = new JSONObject(
+                    getDefaultSharedPreferences(this).getString("serviceRecoveryData", ""));
             String lastSmartlockUsage = serviceRecoveryData.getString("lastSmartlockUsage");
             String lockuid = serviceRecoveryData.getString("lockuid");
             Boolean lastUsageIsLocking = lastSmartlockUsage.equals("TEMPORARY_LOCK")  || lastSmartlockUsage.equals("RETURN");
@@ -356,7 +425,7 @@ public class PeripheralService extends Service {
                         JSONObject requestBody = new JSONObject();
                         requestBody.put("otpKey", lastWrittenMessage);
                         String res = post(getConfirmTemplockURL(serviceRecoveryData.getString("url"), lockuid), requestBody.toString(), client, serviceRecoveryData.getString("apiKey"), serviceRecoveryData.getString("token"), isInSSOMode);
-                        Log.d(BleManager.LOG_TAG, "tempLockConfirmed " + res);
+                        PbscLog.d("tempLockConfirmed " + res);
                     } else if(lastSmartlockUsage.equals("RETURN")){
                         TimeZone tz = TimeZone.getTimeZone("UTC");
                         DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
@@ -368,7 +437,7 @@ public class PeripheralService extends Service {
                         requestBody.put("sequence", getRandomHexString(10));
                         requestBody.put("timestamp", timestamp);
                         String res = post(getLockReturnURL(serviceRecoveryData.getString("url"), lockuid), requestBody.toString(), client, serviceRecoveryData.getString("apiKey"), serviceRecoveryData.getString("token"), isInSSOMode);
-                        Log.d(BleManager.LOG_TAG, "returnDone " + res);
+                        PbscLog.d("returnDone " + res);
                     }
                     retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
             } else {
@@ -379,12 +448,12 @@ public class PeripheralService extends Service {
             }
         } catch (JSONException | IOException e) {
             retrieveOrCreatePeripheral(lastUUID).disconnect(null, true);
-            e.printStackTrace();
+            Log.e(BleManager.LOG_TAG, "backupEventHandler failed", e);
         }
     }
 
     private String post(String url, String json, OkHttpClient client, String apiKey, String token, boolean isInSSOMode) throws IOException {
-        RequestBody body = RequestBody.create(JSON, json);
+        RequestBody body = RequestBody.create(json, JSON);
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("X-API-KEY", apiKey)
